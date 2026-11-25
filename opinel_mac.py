@@ -155,11 +155,15 @@ def generate_turn(model, tokenizer, messages, args, stream=False, trim_history=F
     if stream:
         print("Olala prépare sa réponse…", file=sys.stderr, flush=True)
     started = time.perf_counter()
+    temperature = getattr(args, "temperature", 0.0)
+    sampling = {"do_sample": temperature > 0}
+    if temperature > 0:
+        sampling.update(temperature=temperature, top_p=args.top_p, top_k=args.top_k)
     try:
         with torch.inference_mode():
             output = model.generate(
                 **inputs, max_new_tokens=args.max_new_tokens,
-                do_sample=False, use_cache=True, logits_to_keep=1,
+                **sampling, use_cache=True, logits_to_keep=1,
                 pad_token_id=tokenizer.pad_token_id, streamer=streamer,
             )
         if args.device == "mps":
@@ -249,19 +253,28 @@ def snapshot(offline=False):
     ))
 
 
-def load_model(folder, device):
+def load_model(folder, device, *, context_length=2048, unquantized_reference=False, architecture_folder=None):
     import torch
     from safetensors import safe_open
     from transformers import AutoConfig, AutoModelForCausalLM
 
     raw = json.loads((folder / "config.json").read_text())
-    validate_recipe(raw)
-    config = AutoConfig.from_pretrained(folder, trust_remote_code=True, local_files_only=True)
+    if unquantized_reference:
+        if raw.get("quantization_config") or architecture_folder is None:
+            raise ValueError("Référence BF16 attendue avec une architecture de comparaison explicite.")
+        template = AutoConfig.from_pretrained(architecture_folder, trust_remote_code=True, local_files_only=True)
+        config = type(template).from_dict(raw)
+        config.auto_map = template.auto_map
+        config._name_or_path = str(Path(architecture_folder).resolve())
+    else:
+        validate_recipe(raw)
+        config = AutoConfig.from_pretrained(folder, trust_remote_code=True, local_files_only=True)
     # Bypass NVIDIA ModelOpt; load and dequantize every weight ourselves.
-    del config.quantization_config
+    if hasattr(config, "quantization_config"):
+        del config.quantization_config
     # The upstream RoPE cache allocates twice this limit in each attention layer.
     # Our CLI already caps prompt + continuation at 2048 tokens.
-    config.max_position_embeddings = min(config.max_position_embeddings, 2048)
+    config.max_position_embeddings = min(config.max_position_embeddings, context_length)
     with torch.device("meta"):
         model = AutoModelForCausalLM.from_config(
             config, trust_remote_code=True, attn_implementation="eager"
@@ -274,6 +287,8 @@ def load_model(folder, device):
                 continue
             tensor = source.get_tensor(name)
             if tensor.dtype == torch.int8:
+                if unquantized_reference:
+                    raise ValueError("La référence annoncée BF16 contient des poids INT8.")
                 scale_name = name.removesuffix(".weight") + ".weight_scale"
                 if scale_name not in keys:
                     raise ValueError(f"Échelle manquante : {scale_name}")

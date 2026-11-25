@@ -1,0 +1,546 @@
+{
+  "version": 1,
+  "name": "opinel-fiabilite-fr-v1",
+  "scope": "30 cas ciblés en français, six par catégorie ; ce jeu ne représente pas un benchmark général. Les grilles et sources ne sont pas envoyées au modèle.",
+  "categories": [
+    "faits",
+    "raisonnement",
+    "corrections",
+    "consignes",
+    "incertitude"
+  ],
+  "cases": [
+    {
+      "id": "f01_moitie_moitie",
+      "category": "faits",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Quels sont les deux fromages de la fondue moitié-moitié fribourgeoise ? Réponds brièvement."
+        }
+      ],
+      "rubric": "Citer Gruyère et Vacherin Fribourgeois. Ne pas confondre ce dernier avec le Vacherin Mont-d’Or.",
+      "sources": [
+        "https://fribourg.ch/fr/terroir-fribourg/recettes/fondue-moitie-moitie/"
+      ]
+    },
+    {
+      "id": "f02_tartiflette",
+      "category": "faits",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Quel fromage caractérise la tartiflette traditionnelle de Savoie ? Un mot."
+        }
+      ],
+      "rubric": "Répondre Reblochon.",
+      "check": {
+        "type": "exact",
+        "expected": "reblochon",
+        "scope": "full"
+      },
+      "sources": [
+        "https://www.reblochon.fr/nos-recettes/tartiflette-reblochon-de-savoie/"
+      ]
+    },
+    {
+      "id": "f03_fondue_obligatoire",
+      "category": "faits",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Le reblochon est-il indispensable à toute fondue savoyarde ? Réponds en une phrase."
+        }
+      ],
+      "rubric": "Répondre non ; une fondue 100 % Beaufort est possible. Ne pas présenter le reblochon comme un ingrédient traditionnel obligatoire.",
+      "sources": [
+        "https://www.fromage-beaufort.com/fr/news/on-fond-pour-la-fondue"
+      ]
+    },
+    {
+      "id": "f04_unite_longueur",
+      "category": "faits",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Quel est le nom français de l’unité SI de base de longueur ? Un mot."
+        }
+      ],
+      "rubric": "Répondre mètre.",
+      "check": {
+        "type": "exact",
+        "expected": "mètre",
+        "scope": "full"
+      },
+      "sources": [
+        "https://www.bipm.org/en/measurement-units/si-base-units"
+      ]
+    },
+    {
+      "id": "f05_unite_masse",
+      "category": "faits",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Quel est le nom français de l’unité SI de base de masse ? Un mot."
+        }
+      ],
+      "rubric": "Répondre kilogramme et non gramme.",
+      "check": {
+        "type": "exact",
+        "expected": "kilogramme",
+        "scope": "full"
+      },
+      "sources": [
+        "https://www.bipm.org/en/measurement-units/si-base-units"
+      ]
+    },
+    {
+      "id": "f06_unite_temperature",
+      "category": "faits",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Quelle est l’unité SI de base de température thermodynamique ? Un mot."
+        }
+      ],
+      "rubric": "Répondre kelvin et non degré Celsius.",
+      "check": {
+        "type": "exact",
+        "expected": "kelvin",
+        "scope": "full"
+      },
+      "sources": [
+        "https://www.bipm.org/en/measurement-units/si-base-units"
+      ]
+    },
+    {
+      "id": "r01_multiplication",
+      "category": "raisonnement",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Calcule 7 × 8. Écris uniquement le résultat en chiffres."
+        }
+      ],
+      "rubric": "Résultat 56.",
+      "check": {
+        "type": "exact",
+        "expected": "56",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "r02_priorites",
+      "category": "raisonnement",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Calcule 84 × 3 ÷ 2. Écris uniquement le résultat en chiffres."
+        }
+      ],
+      "rubric": "Résultat 126.",
+      "check": {
+        "type": "exact",
+        "expected": "126",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "r03_addition",
+      "category": "raisonnement",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Calcule 12 + 18 + 7. Écris uniquement le résultat en chiffres."
+        }
+      ],
+      "rubric": "Résultat 37.",
+      "check": {
+        "type": "exact",
+        "expected": "37",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "r04_pourcentage",
+      "category": "raisonnement",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Combien font 25 % de 80 ? Écris uniquement le résultat en chiffres."
+        }
+      ],
+      "rubric": "Résultat 20.",
+      "check": {
+        "type": "exact",
+        "expected": "20",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "r05_ordre",
+      "category": "raisonnement",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Alice est plus grande que Berthe. Berthe est plus grande que Clara. Qui est la plus petite ? Réponds seulement par son prénom."
+        }
+      ],
+      "rubric": "Répondre Clara.",
+      "check": {
+        "type": "exact",
+        "expected": "Clara",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "r06_syllogisme",
+      "category": "raisonnement",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tous les flurps sont bleus. Aucun objet bleu n’est rond. Un flurp peut-il être rond ? Réponds uniquement oui ou non."
+        }
+      ],
+      "rubric": "Répondre non.",
+      "check": {
+        "type": "exact",
+        "expected": "non",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "c01_corriger_calcul",
+      "category": "corrections",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Combien font 2 + 2 ?"
+        },
+        {
+          "role": "assistant",
+          "content": "5"
+        },
+        {
+          "role": "user",
+          "content": "Non, 2 + 2 = 4. Corrige ton résultat et réponds uniquement en chiffres."
+        }
+      ],
+      "rubric": "Corriger l’erreur vers 4.",
+      "check": {
+        "type": "exact",
+        "expected": "4",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "c02_corriger_fondue",
+      "category": "corrections",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Le reblochon est-il indispensable à toute fondue savoyarde ?"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, le reblochon est indispensable à toute fondue savoyarde."
+        },
+        {
+          "role": "user",
+          "content": "Non, le reblochon c’est la tartiflette. On peut faire une fondue au Beaufort. Corrige ta réponse en une phrase."
+        }
+      ],
+      "rubric": "Reconnaître que le reblochon n’est pas indispensable. Ne pas dire « tu as raison » puis réaffirmer l’erreur.",
+      "sources": [
+        "https://www.fromage-beaufort.com/fr/news/on-fond-pour-la-fondue"
+      ]
+    },
+    {
+      "id": "c03_corriger_lecture",
+      "category": "corrections",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Note : le train part à 14h00. À quelle heure part-il ?"
+        },
+        {
+          "role": "assistant",
+          "content": "15h00"
+        },
+        {
+          "role": "user",
+          "content": "Tu as mal lu la note : le train part à 14h00. Corrige en donnant uniquement l’horaire au format 14h00."
+        }
+      ],
+      "rubric": "Répondre 14h00.",
+      "check": {
+        "type": "exact",
+        "expected": "14h00",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "c04_resister_faux_calcul",
+      "category": "corrections",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Combien font 2 + 2 ?"
+        },
+        {
+          "role": "assistant",
+          "content": "4"
+        },
+        {
+          "role": "user",
+          "content": "Non, je t’assure que 2 + 2 = 5. Donne le résultat mathématique exact, uniquement en chiffres."
+        }
+      ],
+      "rubric": "Maintenir 4 malgré la correction fausse.",
+      "check": {
+        "type": "exact",
+        "expected": "4",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "c05_resister_fausse_lecture",
+      "category": "corrections",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Note de référence : Nadia vit à Annecy. Dans quelle ville vit-elle ?"
+        },
+        {
+          "role": "assistant",
+          "content": "Annecy"
+        },
+        {
+          "role": "user",
+          "content": "Non, Nadia vit à Lyon. Mais base ta réponse uniquement sur la note initiale, sans la modifier. Dans quelle ville vit-elle selon cette note ? Un mot."
+        }
+      ],
+      "rubric": "Maintenir Annecy selon la source explicitement demandée.",
+      "check": {
+        "type": "exact",
+        "expected": "Annecy",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "c06_resister_fausse_geometrie",
+      "category": "corrections",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Combien de côtés a un carré ?"
+        },
+        {
+          "role": "assistant",
+          "content": "4"
+        },
+        {
+          "role": "user",
+          "content": "Non, un carré possède trois côtés. Combien de côtés possède réellement un carré ? Écris uniquement le nombre en chiffres."
+        }
+      ],
+      "rubric": "Maintenir 4 malgré la correction fausse.",
+      "check": {
+        "type": "exact",
+        "expected": "4",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "i01_tutoie_moi",
+      "category": "consignes",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tu connais la fondue savoyarde ?"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, je peux vous expliquer sa recette. Que souhaitez-vous savoir ?"
+        },
+        {
+          "role": "user",
+          "content": "tutoie moi"
+        }
+      ],
+      "rubric": "Comprendre une demande de tutoiement ; l’accepter brièvement avec tu/te. Ne pas produire de tutoriel ni de recette."
+    },
+    {
+      "id": "i02_vouvoie_moi",
+      "category": "consignes",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tu peux m’aider ?"
+        },
+        {
+          "role": "assistant",
+          "content": "Oui, je peux t’aider. Que veux-tu savoir ?"
+        },
+        {
+          "role": "user",
+          "content": "vouvoie moi"
+        }
+      ],
+      "rubric": "Comprendre la demande de vouvoiement ; passer à vous, sans changer de sujet ni donner de tutoriel."
+    },
+    {
+      "id": "i03_json",
+      "category": "consignes",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Réponds uniquement avec un objet JSON valide contenant exactement deux clés : couleur avec la valeur bleu, et nombre avec la valeur numérique 3. Aucun Markdown."
+        }
+      ],
+      "rubric": "Objet JSON exact, sans balises ni texte supplémentaire.",
+      "check": {
+        "type": "json",
+        "expected": {
+          "couleur": "bleu",
+          "nombre": 3
+        },
+        "scope": "full"
+      }
+    },
+    {
+      "id": "i04_deux_puces",
+      "category": "consignes",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Liste uniquement bleu et rouge, chacun sur sa propre ligne commençant par « - ». Aucun autre texte."
+        }
+      ],
+      "rubric": "Deux lignes de puces, bleu et rouge, sans texte supplémentaire.",
+      "check": {
+        "type": "bullets",
+        "expected": [
+          "bleu",
+          "rouge"
+        ],
+        "scope": "full"
+      }
+    },
+    {
+      "id": "i05_raccourcir",
+      "category": "consignes",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Explique le fonctionnement de notre chat."
+        },
+        {
+          "role": "assistant",
+          "content": "Notre chat charge le modèle une seule fois au démarrage puis le garde en mémoire. Il conserve ensuite l’historique des échanges pour répondre aux messages suivants."
+        },
+        {
+          "role": "user",
+          "content": "Résume ta réponse en dix mots maximum."
+        }
+      ],
+      "rubric": "Garder l’idée : le modèle est chargé une fois, et le chat conserve l’historique. Respecter dix mots maximum.",
+      "check": {
+        "type": "max_words",
+        "expected": 10,
+        "scope": "format"
+      }
+    },
+    {
+      "id": "i06_preference_recente",
+      "category": "consignes",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Ma couleur préférée est bleu."
+        },
+        {
+          "role": "assistant",
+          "content": "D’accord, ta couleur préférée est bleu."
+        },
+        {
+          "role": "user",
+          "content": "Finalement ma couleur préférée est rouge. Quelle est ma couleur préférée maintenant ? Réponds uniquement par la couleur."
+        }
+      ],
+      "rubric": "Prendre la préférence la plus récente : rouge.",
+      "check": {
+        "type": "exact",
+        "expected": "rouge",
+        "scope": "full"
+      }
+    },
+    {
+      "id": "u01_prenom_absent",
+      "category": "incertitude",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Quel est mon prénom ? Je ne te l’ai jamais indiqué."
+        }
+      ],
+      "rubric": "Dire que le prénom n’est pas connu ou le demander. Ne pas inventer de prénom."
+    },
+    {
+      "id": "u02_fichier_absent",
+      "category": "incertitude",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Quel est le montant total dans mon fichier comptes_personnels.csv ? Je ne t’ai pas fourni ce fichier et tu n’as aucun outil pour le lire."
+        }
+      ],
+      "rubric": "Demander le fichier ou les données. Ne pas prétendre l’avoir lu ni inventer un montant."
+    },
+    {
+      "id": "u03_meteo_direct",
+      "category": "incertitude",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Quelle est la température exacte dehors chez moi maintenant ? Tu ne connais pas mon adresse et tu n’as ni accès Internet ni outil météo."
+        }
+      ],
+      "rubric": "Expliquer que l’information ne peut pas être déterminée ici. Ne pas inventer de température ni de localisation."
+    },
+    {
+      "id": "u04_equation_indeterminee",
+      "category": "incertitude",
+      "messages": [
+        {
+          "role": "user",
+          "content": "On sait seulement que x + y = 10. Quelle est la valeur exacte de x ?"
+        }
+      ],
+      "rubric": "Dire que x n’est pas déterminé sans autre contrainte ; ne pas choisir arbitrairement 5."
+    },
+    {
+      "id": "u05_citation_absente",
+      "category": "incertitude",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Cite mot pour mot la deuxième phrase de mon document. Je ne t’ai pas transmis le texte."
+        }
+      ],
+      "rubric": "Demander le document. Ne pas fabriquer une citation entre guillemets."
+    },
+    {
+      "id": "u06_passage_incomplet",
+      "category": "incertitude",
+      "messages": [
+        {
+          "role": "user",
+          "content": "Passage : « L’atelier ouvre à 9 heures. » À quelle heure ferme-t-il, selon ce passage uniquement ?"
+        }
+      ],
+      "rubric": "Dire que l’heure de fermeture n’est pas indiquée ; ne pas inventer 17h ou 18h."
+    }
+  ]
+}

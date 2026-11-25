@@ -1,0 +1,56 @@
+{
+  "repository": "OVHaiLLM/Olala-v1.0-mini-7A1B",
+  "revision": "94836be2ae9bfd5c7c7e7f68f481c9f14f2ee6ea",
+  "files": {
+    "LICENSE": {
+      "size": 11358,
+      "algorithm": "git-sha1",
+      "digest": "d645695673349e3947e8e5ae42332d0ac3164cd7"
+    },
+    "NOTICE": {
+      "size": 359,
+      "algorithm": "git-sha1",
+      "digest": "f6ccf843556c927eb6a3841a75c16aa70dbafb6b"
+    },
+    "chat_template.jinja": {
+      "size": 8201,
+      "algorithm": "git-sha1",
+      "digest": "a6e82ab3e358af5f286ef6278194769f2b6c6fb5"
+    },
+    "config.json": {
+      "size": 3832,
+      "algorithm": "git-sha1",
+      "digest": "26255e2e20d58e08616aafd86f2ced7fd60b1346"
+    },
+    "configuration_olala.py": {
+      "size": 13626,
+      "algorithm": "git-sha1",
+      "digest": "72d459b83032b576ce92af0f861b758aaf3fea13"
+    },
+    "generation_config.json": {
+      "size": 231,
+      "algorithm": "git-sha1",
+      "digest": "017e17138b03c92fc2b8b5934647f68fc903ce9b"
+    },
+    "model.safetensors": {
+      "size": 13579677592,
+      "algorithm": "sha256",
+      "digest": "99a208e1b45a4677ac1ce2eeaeb45150aa3c28aac173df3d22dc7985e9356442"
+    },
+    "modeling_olala.py": {
+      "size": 114122,
+      "algorithm": "git-sha1",
+      "digest": "32ec457d67dcb35a5445117d766edd6e7d07a0cc"
+    },
+    "tokenizer.json": {
+      "size": 11421883,
+      "algorithm": "sha256",
+      "digest": "286ead4e29f85215a29ffc035c2529c635ed2dc390d101c8738ab7bcf8f984b5"
+    },
+    "tokenizer_config.json": {
+      "size": 710,
+      "algorithm": "git-sha1",
+      "digest": "1247ab473e7314226974dad22eb001c5a04d869f"
+    }
+  }
+}

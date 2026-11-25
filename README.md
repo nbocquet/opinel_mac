@@ -212,6 +212,54 @@ a cependant accepté une correction vers le Beaufort. Ces observations confirmen
 des défauts dans la version de référence ; elles ne remplacent pas une comparaison
 numérique entre les kernels MLX fusionnés et leur chemin de référence.
 
+### Évaluation de fiabilité (25 novembre 2026)
+
+`evaluation/reliability_fr.json` fixe 30 cas en français (faits, raisonnement,
+corrections, consignes, incertitude). Commandes, grilles et règles de relecture :
+voir [`evaluation/README.md`](evaluation/README.md). Les rapports sont écrits
+dans `.cache/evaluations/`, hors Git.
+
+**Opinel N8 et Olala original**, avec le même fallback PyTorch CPU, le preset
+`baseline` (`low`, déterministe, 1024 tokens) et la graine 0 :
+
+| | Opinel N8 | Olala original |
+|---|---|---|
+| Réussis | 27 | 26 |
+| Échecs | 2 (`tutoie moi`, `vouvoie moi`) | 1 (« metro » au lieu de « mètre ») |
+| Budget de 1024 tokens épuisé | 0 | 3 (fondue moitié-moitié, `tutoie moi`, `vouvoie moi`) |
+| Incertain | 1 (x indéterminé, avec une contrainte inventée « entre 0 et 10 ») | 0 |
+| Latence médiane par cas | 25,7 s | 28,7 s |
+
+Les verdicts concordent sur 25 cas. Aucune des deux versions ne satisfait
+« tutoie moi » ni « vouvoie moi » : Opinel produit une recette au vouvoiement,
+puis continue à tutoyer ; l'original n'arrive à aucune réponse finale dans le
+budget. Ce défaut ne semble donc pas introduit par les retouches Opinel ou la
+quantification N8. Les écarts restants (trois cas) sont trop peu nombreux pour
+classer les deux versions.
+
+**Parité PyTorch/MLX** (poids Opinel BF16, 3 prompts, 25 positions avec
+préremplissage et pas en cache ; captures MLX faites depuis le terminal du Mac) :
+
+| Comparaison | Accord top-1 | KL moyenne | KL max | Écart moyen de log-prob. |
+|---|---|---|---|---|
+| MLX référence → MLX fusionné | 25/25 | 0,0031 | 0,041 | 0,109 |
+| PyTorch CPU → MLX référence | 24/25 | 0,0096 | 0,089 | 0,161 |
+| PyTorch CPU → MLX fusionné | 24/25 | 0,0067 | 0,079 | 0,099 |
+
+Le seul désaccord top-1 est une quasi-égalité, dans le calcul `7 × 8`.
+PyTorch donne « 1 » à −0,90 et « 7 » à −1,02 (écart de 0,13 nat), alors que
+les deux chemins MLX préfèrent « 7 ». Les kernels Metal fusionnés OVH restent
+proches de leur chemin de référence. Sur ces entrées, rien n'indique un bug
+numérique majeur expliquant à lui seul les erreurs observées en conversation.
+
+**Limites.** Une seule exécution déterministe, sur 30 cas ciblés : ce n'est
+pas une mesure de fiabilité générale. Les réponses libres ont été jugées par
+un assistant (`kind=assistant`), sans validation humaine indépendante. Le preset
+`ovh` (échantillonnage) et les graines multiples n'ont pas été évalués. La parité
+porte sur trois prompts courts, sans seuil d'acceptation ; le Q8 MLX n'est
+pas couvert. **Les hallucinations et les consignes ignorées ne sont pas
+corrigées** : ces mesures les situent sans les résoudre.
+
 ## Vérification et limites
 
 ```sh
@@ -220,7 +268,7 @@ numérique entre les kernels MLX fusionnés et leur chemin de référence.
 .venv/bin/python scripts/check_model.py --device cpu
 ```
 
-Les 42 tests unitaires passent avec les dépendances installées. Sans PyTorch,
+Les 59 tests unitaires passent avec les dépendances installées. Sans PyTorch,
 les tests numériques sont explicitement ignorés. Le chargement réel et la
 génération avec cache ont été exécutés sur CPU, et une génération MPS a été
 confirmée depuis le terminal du Mac. La parité numérique complète avec le serveur

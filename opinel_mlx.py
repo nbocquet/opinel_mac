@@ -140,7 +140,8 @@ def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_histo
     started = time.perf_counter()
     responses = stream_generate(
         model, tokenizer, prompt=tokens, max_tokens=args.max_new_tokens,
-        sampler=make_sampler(temp=0.0),
+        sampler=make_sampler(temp=getattr(args, "temperature", 0.0),
+                             top_p=getattr(args, "top_p", 1.0), top_k=getattr(args, "top_k", 0)),
     )
     answer, last = collect_response(responses, stream)
     elapsed = time.perf_counter() - started
