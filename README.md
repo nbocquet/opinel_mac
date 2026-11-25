@@ -181,6 +181,37 @@ Les résultats et durées sont écrits dans `.cache/torch-model-check.json` et
 `.cache/mlx-model-check.json`. Les quatre questions sont des contrôles simples,
 pas une validation complète de la parité numérique ou de la qualité.
 
+### Diagnostic de la qualité des réponses
+
+Des conversations réelles ont montré des erreurs factuelles répétées, un refus
+de prendre en compte des corrections et une confusion entre « tutoie-moi » et
+une demande de tutoriel. Les tests logiciels et la vitesse de décodage ne
+mesurent pas ces défauts. Aucun correctif général des connaissances n'est revendiqué.
+
+`scripts/diagnose_quality.py` rejoue des cas identiques, dont le premier message
+exact de la conversation signalée, sur chaque backend :
+
+```sh
+.venv/bin/python scripts/diagnose_quality.py --backend torch --device cpu
+.venv-mlx/bin/python scripts/diagnose_quality.py --backend mlx --device mps
+# Référence MLX sans les kernels Metal fusionnés OVH :
+.venv-mlx/bin/python scripts/diagnose_quality.py --backend mlx --device mps --reference
+```
+
+Les captures JSON sont dans `.cache/quality-<backend>-<effort>.json` (mode
+`mlx-reference` pour la troisième commande). Elles nécessitent une lecture
+humaine : une génération terminée n'est pas un verdict de réponse correcte.
+Les liens de référence servent à évaluer les réponses et ne sont pas injectés
+dans les prompts. `--case fondue_comparison_exact` cible le premier message ;
+`--reasoning-effort medium` permet une comparaison séparée du réglage `low`.
+
+Le diagnostic PyTorch CPU en `low` a reproduit la demande « tutoie moi »
+interprétée comme un tutoriel culinaire, et le comparatif exact des deux fondues
+a aussi produit des confusions factuelles. Sur un cas court distinct, le modèle
+a cependant accepté une correction vers le Beaufort. Ces observations confirment
+des défauts dans la version de référence ; elles ne remplacent pas une comparaison
+numérique entre les kernels MLX fusionnés et leur chemin de référence.
+
 ## Vérification et limites
 
 ```sh
@@ -189,7 +220,7 @@ pas une validation complète de la parité numérique ou de la qualité.
 .venv/bin/python scripts/check_model.py --device cpu
 ```
 
-Les 41 tests unitaires passent avec les dépendances installées. Sans PyTorch,
+Les 42 tests unitaires passent avec les dépendances installées. Sans PyTorch,
 les tests numériques sont explicitement ignorés. Le chargement réel et la
 génération avec cache ont été exécutés sur CPU, et une génération MPS a été
 confirmée depuis le terminal du Mac. La parité numérique complète avec le serveur

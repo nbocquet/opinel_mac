@@ -79,7 +79,14 @@ class MlxContractTests(unittest.TestCase):
 
     def test_truncated_reasoning_is_not_silently_accepted(self):
         responses = [SimpleNamespace(text="unfinished analysis", finish_reason="length", generation_tokens=1024)]
-        with self.assertRaisesRegex(ValueError, "1024 tokens"):
+        with self.assertRaisesRegex(ValueError, "1024 tokens") as failure:
+            collect_response(responses)
+        self.assertNotIn("plus élevé", str(failure.exception))
+        self.assertIn("/reset", str(failure.exception))
+
+    def test_smaller_exhausted_budget_can_be_increased(self):
+        responses = [SimpleNamespace(text="unfinished analysis", finish_reason="length", generation_tokens=256)]
+        with self.assertRaisesRegex(ValueError, "max-new-tokens 1024"):
             collect_response(responses)
 
     def test_complete_final_can_end_exactly_at_budget_limit(self):

@@ -113,9 +113,12 @@ def collect_response(responses, stream=False):
         answer = final_response("".join(chunks))
     except ValueError as error:
         if last.finish_reason == "length":
+            suggestion = ("Réessayer avec --max-new-tokens 1024."
+                          if last.generation_tokens < 1024 else
+                          "Réessayer avec une demande plus courte, ou /reset pour repartir sans historique.")
             raise ValueError(
                 f"Limite de {last.generation_tokens} tokens atteinte avant une réponse finale complète. "
-                "Réessayer avec un budget plus élevé (1024 maximum) ou une demande plus courte."
+                f"{suggestion}"
             ) from error
         raise
     return answer, last
