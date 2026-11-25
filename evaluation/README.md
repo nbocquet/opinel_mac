@@ -87,6 +87,41 @@ affiche les différences de configuration, les comptes par catégorie, la
 latence médiane et les verdicts appariés. Un score partiel n'est pas annoncé
 comme une amélioration.
 
+## Consignes développeur et suite témoin
+
+Le chat n'envoie par défaut aucun message `developer` : Olala ne reçoit que
+le prompt système générique d'OVH, en anglais. `instructions.py` définit un
+profil expérimental `opinel-fr-v1` (français, registre tu/vous, aveu
+d'incertitude, corrections, format). Il est inséré au rendu du template, ne
+disparaît pas quand l'historique est réduit et n'entre jamais dans
+l'historique. Le rapport enregistre son nom et son empreinte SHA256 ;
+sans consignes, la configuration reste identique aux rapports antérieurs.
+
+`reliability_fr_holdout.json` contient 14 cas témoins, écrits avant toute
+mesure du profil : autres formulations du tutoiement et du vouvoiement
+(dont « tutoie moi » dans un contexte Python), persistance du registre, faits,
+corrections et incertitude. **Ne pas modifier les consignes d'après ces
+réponses** ; sinon ils cessent d'être témoins. Un nouveau profil reçoit un
+nouveau nom (`opinel-fr-v2`, etc.).
+
+Mesure avant/après, depuis le terminal du Mac (MLX, même preset et graine) :
+
+```sh
+for suite in principale temoin; do
+  for profil in aucune opinel-fr-v1; do
+    .venv-mlx/bin/python scripts/evaluate_reliability.py run --backend mlx --device mps \
+      --model-dir models/opinel-n8-mlx-bf16 --suite $suite --instructions $profil \
+      --output .cache/evaluations/opinel-mlx-$suite-$profil.json
+  done
+done
+.venv/bin/python scripts/evaluate_reliability.py compare .cache/evaluations/opinel-mlx-principale-aucune.json .cache/evaluations/opinel-mlx-principale-opinel-fr-v1.json
+.venv/bin/python scripts/evaluate_reliability.py compare .cache/evaluations/opinel-mlx-temoin-aucune.json .cache/evaluations/opinel-mlx-temoin-opinel-fr-v1.json
+```
+
+Une amélioration sur la suite principale seule ne suffit pas ; elle doit se
+retrouver sur les cas témoins. Ces consignes peuvent corriger un comportement
+(registre, prudence) mais n'ajoutent aucune connaissance au modèle.
+
 ## Vérifier les distributions de tokens
 
 Des réponses libres différentes ne suffisent pas à prouver un bug numérique.

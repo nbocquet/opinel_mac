@@ -122,11 +122,14 @@ def make_final_streamer(tokenizer, prefix=""):
                          clean_up_tokenization_spaces=False)
 
 
-def prepare_turn(tokenizer, messages, device, reasoning_effort, trim_history=False, max_input_tokens=1024):
+def prepare_turn(tokenizer, messages, device, reasoning_effort, trim_history=False, max_input_tokens=1024,
+                 instructions=""):
+    from instructions import with_instructions
+
     retained = list(messages)
     while True:
         prompt = tokenizer.apply_chat_template(
-            retained, tokenize=False, add_generation_prompt=True,
+            with_instructions(retained, instructions), tokenize=False, add_generation_prompt=True,
             reasoning_effort=reasoning_effort,
         )
         inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
@@ -138,6 +141,12 @@ def prepare_turn(tokenizer, messages, device, reasoning_effort, trim_history=Fal
         retained = retained[2:]
 
 
+def instructions_text(args):
+    from instructions import resolve
+
+    return resolve(getattr(args, "instructions", "aucune"))
+
+
 def generate_turn(model, tokenizer, messages, args, stream=False, trim_history=False):
     if getattr(args, "backend", "torch") == "mlx":
         from opinel_mlx import generate_turn_mlx
@@ -147,6 +156,7 @@ def generate_turn(model, tokenizer, messages, args, stream=False, trim_history=F
     inputs, retained = prepare_turn(
         tokenizer, messages, args.device, args.reasoning_effort, trim_history,
         max_input_tokens=min(1024, getattr(args, "context_length", 2048) - args.max_new_tokens),
+        instructions=instructions_text(args),
     )
     removed = (len(messages) - len(retained)) // 2
     if removed:
@@ -357,6 +367,8 @@ def parse_args(argv=None):
     parser.add_argument("--max-new-tokens", type=int,
                         help="Budget incluant le raisonnement : 1024 en chat, 256 en génération simple")
     parser.add_argument("--reasoning-effort", choices=["disabled", "low", "medium", "high"], default="low")
+    parser.add_argument("--instructions", choices=["aucune", "opinel-fr-v1"], default="aucune",
+                        help="Consignes développeur ajoutées au template (expérimental)")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--model-dir", type=Path, help="Checkpoint local déjà téléchargé")
     parser.add_argument("--recipe", choices=["bf16", "q8"], default="q8", help="Conversion MLX")

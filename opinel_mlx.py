@@ -64,14 +64,16 @@ def doctor_mlx():
 
 
 def prepare_mlx_turn(tokenizer, messages, reasoning_effort, trim_history=False,
-                     context_length=8192, max_new_tokens=1024):
+                     context_length=8192, max_new_tokens=1024, instructions=""):
+    from instructions import with_instructions
+
     max_input_tokens = context_length - max_new_tokens
     if max_input_tokens < 1:
         raise ValueError("Le budget de génération ne laisse aucune place au prompt.")
     retained = list(messages)
     while True:
         prompt = tokenizer.apply_chat_template(
-            retained, tokenize=False, add_generation_prompt=True,
+            with_instructions(retained, instructions), tokenize=False, add_generation_prompt=True,
             reasoning_effort=reasoning_effort,
         )
         tokens = tokenizer.encode(prompt, add_special_tokens=False)
@@ -127,10 +129,12 @@ def collect_response(responses, stream=False):
 def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_history=False):
     from mlx_lm import stream_generate
     from mlx_lm.sample_utils import make_sampler
+    from instructions import resolve
 
     tokens, retained = prepare_mlx_turn(
         tokenizer, messages, args.reasoning_effort, trim_history,
         context_length=getattr(args, "context_length", 8192), max_new_tokens=args.max_new_tokens,
+        instructions=resolve(getattr(args, "instructions", "aucune")),
     )
     removed = (len(messages) - len(retained)) // 2
     if removed:

@@ -99,6 +99,8 @@ historique et nouveau message disposent donc de 7168 tokens. Avec PyTorch,
 la fenêtre reste de 2048 tokens et l'entrée limitée à 1024. Un message seul trop
 long est refusé.
 Les options `--reasoning-effort low` et `--max-new-tokens 512` fonctionnent aussi en chat.
+`--instructions opinel-fr-v1` ajoute des consignes développeur en français (expérimental,
+désactivé par défaut tant que leur effet n'est pas mesuré ; voir `evaluation/README.md`).
 `--context-length` règle la fenêtre totale (jusqu'à 32768 pour MLX, 2048 pour
 PyTorch). Cette fenêtre doit dépasser le budget `--max-new-tokens`.
 Une limite explicite plus basse reste respectée ; si elle est atteinte, le message
@@ -259,6 +261,42 @@ un assistant (`kind=assistant`), sans validation humaine indépendante. Le prese
 porte sur trois prompts courts, sans seuil d'acceptation ; le Q8 MLX n'est
 pas couvert. **Les hallucinations et les consignes ignorées ne sont pas
 corrigées** : ces mesures les situent sans les résoudre.
+
+### Consignes développeur `opinel-fr-v1` (26 novembre 2026)
+
+Mesure faite avec MLX BF16 fusionné sur le GPU du M5, preset `baseline`, graine 0,
+sans puis avec le profil, sur la suite principale (30 cas) et la suite témoin (14 cas) :
+
+| | Principale sans | Principale avec | Témoin sans | Témoin avec |
+|---|---|---|---|---|
+| Réussis | 27 | 23 | 10 | 10 |
+| Échecs | 3 | 7 | 4 | 4 |
+
+**Le profil n'est pas retenu : il reste désactivé par défaut.**
+- Il supprime les dérives vers un tutoriel ou une recette (« tutoie moi »
+  dans les contextes fondue et Python, « arrête de me vouvoyer »). En
+  revanche, le modèle n'applique toujours pas le bon registre : il annonce
+  « je vous tutoie » ou inverse la demande. Sur la suite témoin, les quatre
+  cas de registre libres échouent avec comme sans consignes.
+- Il dégrade d'autres consignes. Les réponses deviennent des phrases au lieu
+  d'un mot (« kelvin »), les résumés perdent une idée exigée, et le modèle
+  ne demande plus le document ou les données manquantes. « vouvoie moi »,
+  réussi sans consignes sur MLX, échoue avec.
+- Il corrige un fait (fondue moitié-moitié), sur une seule exécution.
+
+Le tutoiement et le vouvoiement semblent donc mal maîtrisés par le modèle
+lui-même ; une consigne générale ne suffit pas sur cette taille de modèle.
+
+Sans consignes, MLX et PyTorch donnent 27/30 tous les deux, mais pas sur
+les mêmes cas. Avec MLX, la fondue moitié-moitié devient « Gruyère et
+Emmental » et « vouvoie moi » réussit. Avec PyTorch, c'est l'inverse. Les
+écarts numériques mesurés plus haut sont faibles, mais une quasi-égalité
+suffit à faire diverger une génération déterministe. Un seul passage par
+réglage ne permet donc pas de départager des variantes à un ou deux cas près.
+
+Les cas témoins ont maintenant été lus. Un futur profil (`opinel-fr-v2`)
+devra être ajusté sur la suite principale seulement, et validé sur de
+nouveaux cas témoins.
 
 ## Vérification et limites
 

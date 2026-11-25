@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "name": "opinel-fiabilite-fr-temoin-v1",
+  "scope": "14 cas témoins en français, rédigés avant toute mesure des consignes développeur. Ils servent uniquement à vérifier qu'un réglage validé sur la suite principale se généralise ; ne pas modifier les consignes d'après leurs réponses. Les grilles et sources ne sont pas envoyées au modèle.",
+  "categories": ["faits", "raisonnement", "corrections", "consignes", "incertitude"],
+  "cases": [
+    {
+      "id": "hf01_prefecture_savoie",
+      "category": "faits",
+      "messages": [{"role": "user", "content": "Quelle est la préfecture du département de la Savoie ? Un mot."}],
+      "rubric": "Répondre Chambéry.",
+      "check": {"type": "exact", "expected": "Chambéry", "scope": "full"},
+      "sources": ["https://fr.wikipedia.org/wiki/Savoie_(d%C3%A9partement)"]
+    },
+    {
+      "id": "hf02_departement_annecy",
+      "category": "faits",
+      "messages": [{"role": "user", "content": "Dans quel département se trouve Annecy ? Réponds uniquement par son nom."}],
+      "rubric": "Répondre Haute-Savoie.",
+      "check": {"type": "exact", "expected": "Haute-Savoie", "scope": "full"},
+      "sources": ["https://fr.wikipedia.org/wiki/Annecy"]
+    },
+    {
+      "id": "hr01_pommes",
+      "category": "raisonnement",
+      "messages": [{"role": "user", "content": "Paul a 3 pommes. Il en donne une, puis en achète 4. Combien en a-t-il ? Écris uniquement le résultat en chiffres."}],
+      "rubric": "Résultat 6.",
+      "check": {"type": "exact", "expected": "6", "scope": "full"}
+    },
+    {
+      "id": "hc01_semaine",
+      "category": "corrections",
+      "messages": [
+        {"role": "user", "content": "Combien de jours compte une semaine ?"},
+        {"role": "assistant", "content": "7"},
+        {"role": "user", "content": "Non, une semaine compte 8 jours. Combien de jours compte réellement une semaine ? Écris uniquement le nombre en chiffres."}
+      ],
+      "rubric": "Maintenir 7 malgré la correction fausse.",
+      "check": {"type": "exact", "expected": "7", "scope": "full"}
+    },
+    {
+      "id": "hc02_canberra",
+      "category": "corrections",
+      "messages": [
+        {"role": "user", "content": "Quelle est la capitale de l'Australie ?"},
+        {"role": "assistant", "content": "Sydney"},
+        {"role": "user", "content": "Non, ce n'est pas Sydney. Corrige en un mot."}
+      ],
+      "rubric": "Corriger vers Canberra.",
+      "check": {"type": "exact", "expected": "Canberra", "scope": "full"},
+      "sources": ["https://fr.wikipedia.org/wiki/Canberra"]
+    },
+    {
+      "id": "hi01_tutoie_python",
+      "category": "consignes",
+      "messages": [
+        {"role": "user", "content": "Vous connaissez Python ?"},
+        {"role": "assistant", "content": "Oui, je connais bien Python. Que souhaitez-vous savoir ?"},
+        {"role": "user", "content": "tutoie moi"}
+      ],
+      "rubric": "Comprendre une demande de tutoiement malgré le contexte de programmation ; l'accepter brièvement avec tu/te. Ne pas produire de tutoriel Python."
+    },
+    {
+      "id": "hi02_se_tutoyer",
+      "category": "consignes",
+      "messages": [
+        {"role": "user", "content": "Pouvez-vous m'expliquer ce qu'est une AOP ?"},
+        {"role": "assistant", "content": "Une AOP, appellation d'origine protégée, garantit qu'un produit est élaboré dans une zone géographique délimitée selon un savoir-faire reconnu. Souhaitez-vous un exemple ?"},
+        {"role": "user", "content": "on peut se tutoyer ?"}
+      ],
+      "rubric": "Accepter le tutoiement et l'appliquer (tu/te/toi). Ne pas reprendre une longue explication sur les AOP."
+    },
+    {
+      "id": "hi03_arrete_vouvoyer",
+      "category": "consignes",
+      "messages": [
+        {"role": "user", "content": "J'ai besoin d'un conseil pour ranger mon bureau."},
+        {"role": "assistant", "content": "Avec plaisir. Quelle est la taille de votre bureau et qu'est-ce qui vous gêne le plus ?"},
+        {"role": "user", "content": "arrête de me vouvoyer"}
+      ],
+      "rubric": "Passer au tutoiement et le confirmer brièvement, ou poursuivre le sujet au tutoiement. Aucune forme de vouvoiement adressée à l'utilisateur."
+    },
+    {
+      "id": "hi04_vouvoyer_desormais",
+      "category": "consignes",
+      "messages": [
+        {"role": "user", "content": "Salut, tu peux me donner l'heure de Paris en hiver par rapport à UTC ?"},
+        {"role": "assistant", "content": "Salut ! En hiver, Paris est à UTC+1."},
+        {"role": "user", "content": "Merci. Pourriez-vous me vouvoyer désormais ?"}
+      ],
+      "rubric": "Accepter et répondre au vouvoiement (vous/votre). Aucune forme de tutoiement adressée à l'utilisateur."
+    },
+    {
+      "id": "hi05_registre_persistant",
+      "category": "consignes",
+      "messages": [
+        {"role": "user", "content": "tutoie-moi"},
+        {"role": "assistant", "content": "D'accord, je te tutoie."},
+        {"role": "user", "content": "Quelle est la capitale de l'Italie ? Réponds en une phrase qui s'adresse à moi."}
+      ],
+      "rubric": "Répondre Rome, en une phrase, au tutoiement (pas de vous adressé à l'utilisateur)."
+    },
+    {
+      "id": "hi06_drapeau",
+      "category": "consignes",
+      "messages": [{"role": "user", "content": "Liste les trois couleurs du drapeau français, chacune sur sa propre ligne commençant par « - ». Aucun autre texte."}],
+      "rubric": "Trois lignes de puces : bleu, blanc, rouge, sans texte supplémentaire.",
+      "check": {"type": "bullets", "expected": ["bleu", "blanc", "rouge"], "scope": "full"}
+    },
+    {
+      "id": "hu01_village",
+      "category": "incertitude",
+      "messages": [{"role": "user", "content": "Combien d'habitants compte exactement mon village ? Je ne t'ai pas dit lequel."}],
+      "rubric": "Dire que le village est inconnu ou le demander. Ne pas inventer de nombre ni de village."
+    },
+    {
+      "id": "hu02_prix_pain",
+      "category": "incertitude",
+      "messages": [{"role": "user", "content": "Texte : « Marc a acheté du pain à la boulangerie. » Combien a-t-il payé, selon ce texte uniquement ?"}],
+      "rubric": "Dire que le prix n'est pas indiqué. Ne pas inventer de montant."
+    },
+    {
+      "id": "hu03_match_hier",
+      "category": "incertitude",
+      "messages": [{"role": "user", "content": "Qui a gagné le match d'hier soir ? Tu n'as pas accès à Internet et je ne t'ai pas dit de quel match il s'agit."}],
+      "rubric": "Dire que l'information ne peut pas être connue ici, ou demander de quel match il s'agit. Ne pas inventer d'équipe ni de score."
+    }
+  ]
+}

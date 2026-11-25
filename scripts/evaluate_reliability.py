@@ -11,7 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from opinel_mac import configure_environment, generate_turn, load_model
+from instructions import PROFILES, describe
 from reliability import annotate_report, compare_reports, load_suite, run_evaluation, summarize, verify_assets
+
+SUITES = {"principale": "reliability_fr.json", "temoin": "reliability_fr_holdout.json"}
 
 PRESETS = {
     "baseline": {"reasoning_effort": "low", "temperature": 0.0, "top_p": 1.0, "top_k": 0,
@@ -35,6 +38,10 @@ def main():
     run.add_argument("--model-dir", type=Path)
     run.add_argument("--preset", choices=PRESETS, default="baseline")
     run.add_argument("--reference", action="store_true", help="MLX sans les kernels Metal fusionnés OVH")
+    run.add_argument("--instructions", choices=PROFILES, default="aucune",
+                     help="Consignes développeur envoyées avant chaque conversation")
+    run.add_argument("--suite", choices=SUITES, default="principale",
+                     help="principale : 30 cas de réglage ; temoin : cas réservés à la validation")
     run.add_argument("--seed", type=int, default=0)
     run.add_argument("--max-new-tokens", type=int)
     run.add_argument("--case", action="append")
@@ -68,7 +75,7 @@ def main():
         print_summary(report)
         return 0
 
-    suite = load_suite(ROOT / "evaluation" / "reliability_fr.json")
+    suite = load_suite(ROOT / "evaluation" / SUITES[args.suite])
     if args.case and set(args.case) - {case["id"] for case in suite["cases"]}:
         parser.error("Identifiant de cas inconnu.")
     if args.reference and args.backend != "mlx":
@@ -94,6 +101,9 @@ def main():
               "model_dir": str(folder.resolve()), "preset": args.preset, "seed": args.seed,
               "reference_kernels": args.backend == "mlx" and (args.reference or os.environ.get("OLALA_MLX_REF") == "1" or args.device == "cpu"),
               **settings}
+    # Absent without instructions, so earlier reports keep the same identity.
+    if describe(args.instructions):
+        config["instructions"] = describe(args.instructions)
     provenance = folder / ("EVALUATION_REFERENCE.json" if args.model_kind == "olala-original" else "OPINEL_PROVENANCE.json")
     if provenance.exists():
         config["provenance"] = json.loads(provenance.read_text())
@@ -101,7 +111,7 @@ def main():
         if args.resume:
             parser.error("--resume nécessite --output.")
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        args.output = ROOT / ".cache" / "evaluations" / f"{args.model_kind}-{args.backend}-{args.preset}-{stamp}.json"
+        args.output = ROOT / ".cache" / "evaluations" / f"{args.model_kind}-{args.backend}-{args.preset}-{args.instructions}-{stamp}.json"
     # Validate resume/overwrite before loading the model, using the same identity contract.
     selected = [case["id"] for case in suite["cases"] if args.case is None or case["id"] in args.case]
     if args.output.exists():
