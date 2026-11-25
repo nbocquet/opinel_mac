@@ -1,0 +1,5 @@
+# Minimal dependencies for the vendored OVH Olala implementation.
+mlx==0.32.3
+mlx-metal==0.32.3
+mlx-lm @ git+https://github.com/ml-explore/mlx-lm.git@87b7b583a697537aa68f47130b40884700b5f55f
+transformers==5.8.0

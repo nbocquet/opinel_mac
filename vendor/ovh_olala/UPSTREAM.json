@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/OVHai-LLM/mlx-engine",
+  "revision": "58083ca0ac4ca0654b508f74e1bdf7b6e0e173f4",
+  "subdirectory": "mlx_engine/models/olala",
+  "files": {
+    "__init__.py": "4f8cde51cea6837892e0ef45e2b7a4e8e3a9b91b617b05f25966214401f11a5d",
+    "model.py": "9a5520a10e98da9535aa9f3a3ca53dbfa9d563241a1510b92a5aa3e627fa7847",
+    "kernels.py": "385ce693ed48de91f691a049b2863028cb1805f458e752e2348c1713791a982c",
+    "metal.py": "24b0ca8b326e6bee2d86c1b6d5c76c19e87d88a2c321f8e43111d809e15074a6",
+    "vlm.py": "b04325a469e19ce937c222c109643ae29c881e928c96e71d49de894163a48fff",
+    "README.md": "c09c26ed0111391a7e25c85b0f61734eeebc31f44b78144a6aef0883586f1cf1",
+    "LICENSE": "caf8c6e6782bf9b8aef656590c0a05d9b1c11c268adb660af43cb3132a907554"
+  }
+}

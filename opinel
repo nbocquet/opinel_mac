@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+project_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+backend=torch
+previous=
+for argument in "$@"; do
+    if [ "$previous" = "--backend" ]; then
+        backend=$argument
+    fi
+    case "$argument" in --backend=*) backend=${argument#--backend=} ;; esac
+    previous=$argument
+done
+environment=.venv
+if [ "$backend" = "mlx" ]; then environment=.venv-mlx; fi
+if [ ! -x "$project_dir/$environment/bin/python" ]; then
+    printf '%s\n' "Environnement absent. Consulter README.md pour l'installation." >&2
+    exit 1
+fi
+if [ "$#" -eq 0 ]; then
+    set -- generate
+fi
+exec "$project_dir/$environment/bin/python" "$project_dir/opinel_mac.py" "$@"
