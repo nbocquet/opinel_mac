@@ -430,6 +430,35 @@ par mode depuis le terminal du Mac (médiane de 7,7 s par question en `low`,
 .venv-mlx/bin/python scripts/evaluate_gsm8k.py --summary .cache/evaluations/gsm8k-n8-low.json
 ```
 
+## Télégraphe : décodage spéculatif (en cours)
+
+[Télégraphe](https://huggingface.co/maurienne-ai/Olala-v1.0-mini-7A1B-Telegraphe)
+est le drafter de l'équipe Opinel : il propose K tokens d'un coup, que la cible
+vérifie en une seule passe. `opinel_telegraphe.py` le porte en MLX (étape 1 sur
+4 : le drafter seul ; la boucle spéculative n'existe pas encore). Il lit le
+flux résiduel de la cible après les couches 1, 9, 17, 25 et 33, la table
+d'embedding normalisée de la cible (comme vLLM) et, au choix, sa propre tête
+bf16 ou la tête INT8 de la cible. Les poids sont téléchargés à une révision
+épinglée et vérifiés par SHA256 ; l'embedding du token masque est lu dans les
+octets bruts de `mask_embedding.pt`, sans exécuter le pickle.
+
+Acceptation hors ligne (`scripts/telegraphe_acceptance.py`) : la cible écrit
+une continuation greedy de 256 tokens pour 16 prompts variés ; à chaque position,
+Télégraphe propose 7 tokens à partir du contexte, comptés tant qu'ils égalent le
+choix de la cible. Tokens par passe (acceptés + 1) :
+
+| Configuration | K = 3 | K = 5 | K = 7 | Une passe du drafter |
+|---|---|---|---|---|
+| Tête bf16 du drafter | 2,81 | 3,43 | 3,82 | ≈ 7,5 ms |
+| Tête INT8 de la cible | 2,84 | 3,49 | 3,88 | ≈ 7,4 ms |
+| Tête INT8 de la cible, couches 8 bits | 2,82 | 3,43 | 3,81 | ≈ 6,3 ms |
+| Fiche Télégraphe (RTX 5090, 2 000 réponses) | 2,96 | 3,70 | 4,20 | |
+
+Selon le prompt, de 2,27 (espagnol) à 3,51 (calcul) à K = 3. La vérification
+coûte 26,9 ms à K = 3 et 32,8 ms à K = 5, contre 14,4 ms pour un token décodé
+seul (`scripts/bench_verify.py`, voir l'issue #1) : avec le chemin de
+préremplissage actuel, le gain attendu est d'environ ×1,2.
+
 ## Pistes de l'issue #1 non traitées
 
 Les conseils suivants de l'[issue #1](../../issues/1) restent à faire ou à
@@ -445,7 +474,7 @@ mesurer :
   reproduit le fork, à valider par un test d'aiguille (§12) ;
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
-- portage du drafter Télégraphe (§5).
+- boucle spéculative avec Télégraphe (§5) : drafter porté, voir plus haut.
 
 Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans
 cette liste : c'est une limite du modèle, que le moteur ne corrige pas.
