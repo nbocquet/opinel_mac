@@ -105,6 +105,9 @@ class VerifyRecorder:
                     shift_cache[slot] = values[:, keep - 1:keep]
 
 
+ASYNC_TAIL = True  # rollback and drafter context append evaluated asynchronously (issue #4)
+
+
 def rejection_step(drafts, candidate_ids, log_q, law_ids, law_probs, rng):
     """Speculative sampling of one verified block (Leviathan et al., Chen et al.), exact for the target law.
 
@@ -283,7 +286,8 @@ class Speculator:
             keep = accepted + 1
             self.recorder.rollback(cache, keep, len(block))
             context.append(*self.drafter.context_kv(aux[:keep], start=position))
-            mx.eval(context.arrays(), [c.state for c in cache])
+            # without waiting: the GPU rolls back while the CPU builds the next draft graph
+            (mx.async_eval if ASYNC_TAIL else mx.eval)(context.arrays(), [c.state for c in cache])
             position += keep
             anchor = next_token
             stats["steps"] += 1
