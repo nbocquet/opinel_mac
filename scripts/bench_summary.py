@@ -1,7 +1,8 @@
 """Regenerate benchmarks/summary.md from benchmarks/results/<date>/<machine>/*.json.
 
 One line per machine and date: plain decode (the warm-up witness of the greedy
-run), verify of 4 tokens (decode kernels, opinel_verify), greedy speedup at
+run), verify of 4 tokens by the faster path on that machine (decode kernels of
+opinel_verify, or the OVH prefill path) with its name, greedy speedup at
 K = 3, sampled speedup at K = 2 (chat settings), chat speedup on the varied
 conversation. A missing bench leaves "—".
 """
@@ -31,7 +32,10 @@ def row(folder, machines):
     greedy = load(folder / "speculative_greedy.json")
     sampled = load(folder / "speculative_sampled.json")
     chat = load(folder / "chat_speed_variee.json")
-    verify = (profile or {}).get("milliseconds", {}).get("4 (noyaux de décodage, opinel_verify)")
+    timings = (profile or {}).get("milliseconds", {})
+    paths = {"décodage": timings.get("4 (noyaux de décodage, opinel_verify)"), "préremplissage": timings.get("4")}
+    paths = {name: value for name, value in paths.items() if value is not None}
+    best = min(paths, key=paths.get) if paths else None
     plain = (greedy or {}).get("plain_tokens_per_second")
     k3 = (greedy or {}).get("speculative", {}).get("3", {}).get("speedup")
     k2 = (sampled or {}).get("speculative", {}).get("2", {}).get("speedup")
@@ -42,9 +46,9 @@ def row(folder, machines):
             chat_gain = rates["spéculatif"] / rates["normal"]
     quick = any((r or {}).get("meta", {}).get("quick") for r in (profile, greedy, sampled))
     label = machine + (" (rapide)" if quick else "")
-    return (f"| {label} | {date} | {sheet.get('chip', '—')} | {number(plain, '{:.1f} tokens/s')} "
-            f"| {number(verify, '{:.1f} ms')} | {number(k3, '×{:.2f}')} | {number(k2, '×{:.2f}')} "
-            f"| {number(chat_gain, '×{:.2f}')} |")
+    verify = number(paths.get(best), "{:.1f} ms") + (f" ({best})" if best else "")
+    return (f"| {label} | {date} | {sheet.get('chip', '—')} | {number(plain, '{:.1f} tokens/s')} | {verify} "
+            f"| {number(k3, '×{:.2f}')} | {number(k2, '×{:.2f}')} | {number(chat_gain, '×{:.2f}')} |")
 
 
 def summary(benchmarks=BENCHMARKS):

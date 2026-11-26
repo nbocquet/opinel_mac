@@ -37,14 +37,14 @@ class SummaryTests(unittest.TestCase):
             folder = root / "results" / "2026-11-26" / "m5-test"
             folder.mkdir(parents=True)
             (folder / "profile_verify.json").write_text(json.dumps(
-                {"milliseconds": {"4 (noyaux de décodage, opinel_verify)": 21.6}}))
+                {"milliseconds": {"4 (noyaux de décodage, opinel_verify)": 21.6, "4": 25.7}}))
             (folder / "speculative_greedy.json").write_text(json.dumps(
                 {"plain_tokens_per_second": 77.3, "speculative": {"3": {"speedup": 1.21}}}))
             (folder / "chat_speed_variee.json").write_text(json.dumps(
                 {"tokens_per_second": {"normal": 58.0, "spéculatif": 63.2}}))
             text = bench_summary.summary(root)
         line = text.strip().splitlines()[-1]
-        self.assertEqual(line, "| m5-test | 2026-11-26 | Apple M5 | 77,3 tokens/s | 21,6 ms | ×1,21 | — | ×1,09 |")
+        self.assertEqual(line, "| m5-test | 2026-11-26 | Apple M5 | 77,3 tokens/s | 21,6 ms (décodage) | ×1,21 | — | ×1,09 |")
 
 
 if __name__ == "__main__":

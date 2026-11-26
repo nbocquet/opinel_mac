@@ -668,6 +668,16 @@ noyaux sur un choix greedy.
 boucle greedy et échantillonnée, chat), `scripts/bench_summary.py` régénère
 `benchmarks/summary.md`. Protocole et pièges dans `benchmarks/README.md`.
 
+Premières séries (26 novembre 2026), chemin de vérification choisi par le
+calibrage :
+
+| Machine | Vérif 4 tokens | Greedy K = 3 | Échantillonné K = 2 | Chat varié |
+|---|---|---|---|---|
+| M4 (m4-mini) | 27,8 ms (préremplissage) | ×1,27 | ×1,13 | ×1,07 |
+| M5 (m5-macbookair) | 20,4 ms (noyaux de décodage) | ×1,22 | ×1,18 | ×1,09 |
+
+Avec le calibrage, le M4 passe de ×0,95 à ×1,07 dans le chat.
+
 ## Pistes de l'issue #1 non traitées
 
 Les conseils suivants de l'[issue #1](../../issues/1) restent à faire ou à
