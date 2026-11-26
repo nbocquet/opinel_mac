@@ -366,16 +366,59 @@ Les cas témoins ont maintenant été lus. Un futur profil (`opinel-fr-v2`)
 devra être ajusté sur la suite principale seulement, et validé sur de
 nouveaux cas témoins.
 
+### Contrôle de bout en bout sur GSM8K
+
+`scripts/evaluate_gsm8k.py` reproduit le protocole de la fiche (issue #1,
+§13). Il prend les 300 premières questions du jeu de test d'origine, épinglé à
+un commit et vérifié par SHA256 dans `.cache/gsm8k/`, et ajoute à chacune
+`Give the final answer as a number on the last line.`. Il échantillonne en
+0,8 / 0,9 / 40 dans l'ordre de vLLM, avec un budget de 6144 tokens, et retient
+le dernier nombre du canal final. Le rapport est écrit après chaque question
+et peut être repris avec `--resume`. Repères de la fiche pour N°8 : 94,3 % en
+`low` et 95,0 % en `medium`. À n = 300, l'erreur-type est d'environ 1,4 point ;
+le résumé signale un écart de plus de 3 points. Compter une à deux heures
+depuis le terminal du Mac :
+
+```sh
+.venv-mlx/bin/python scripts/evaluate_gsm8k.py --reasoning-effort low \
+  --output .cache/evaluations/gsm8k-n8-low.json
+.venv-mlx/bin/python scripts/evaluate_gsm8k.py --summary .cache/evaluations/gsm8k-n8-low.json
+```
+
+## Pistes de l'issue #1 non traitées
+
+Les conseils suivants de l'[issue #1](../../issues/1) restent à faire ou à
+mesurer :
+
+- réutiliser le cache de prompt d'un tour à l'autre : le prompt du tour n est
+  un préfixe de celui du tour n+1 tant que rien n'est retiré (§8) ;
+- forcer le canal final (`<|channel_end|><|channel_start|>final<|content|>`)
+  quand l'analyse épuise son budget, au lieu de jeter l'échange (§11) ;
+- charger N°4 directement : ses experts sont déjà au format affine 4 bits de
+  MLX, avec des groupes de 32 (§1) ; à faire après validation de N°8 ;
+- mesurer `OLALA_TPA_TGS` (nombre de cœurs GPU) et `OLALA_TPA_CACHE=full` contre
+  `factored` sur les longs contextes (§8) ;
+- au-delà de 32768 tokens : `"slw_wsize": 65536` dans le `config.json` MLX
+  reproduit le fork, à valider par un test d'aiguille (§12) ;
+- décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
+  PyTorch reste surtout la référence CPU ;
+- portage du drafter Télégraphe (§5).
+
+Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans
+cette liste : c'est une limite du modèle, que le moteur ne corrige pas.
+
 ## Vérification et limites
 
 ```sh
 .venv/bin/python -m unittest discover -s tests -v
+.venv-mlx/bin/python -m unittest discover -s tests -v
 # Vérification du modèle réel (charge environ 14 Go) :
 .venv/bin/python scripts/check_model.py --device cpu
 ```
 
-Les 59 tests unitaires passent avec les dépendances installées. Sans PyTorch,
-les tests numériques sont explicitement ignorés. Le chargement réel et la
+Les 92 tests unitaires passent dans chacun des deux environnements. Les tests
+qui demandent PyTorch ou MLX sont explicitement ignorés lorsque la
+bibliothèque est absente. Le chargement réel et la
 génération avec cache ont été exécutés sur CPU, et une génération MPS a été
 confirmée depuis le terminal du Mac. La parité numérique complète avec le serveur
 du créateur reste à vérifier.
