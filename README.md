@@ -606,9 +606,28 @@ normal et `--speculatif`, chaque variante avec son historique et son cache de
 prompt) : 73,4 tokens/s contre 67,2, préremplissage compris, soit **×1,09** ;
 décodage médian 81,3 contre 75,8 tokens/s. Le gain fond avec la longueur du
 contexte : ×1,13-1,24 sur les premiers tours, nul ou négatif aux tours 7 à 9
-(3 000 à 5 000 tokens de contexte). Suspects : l'attention de la vérification
-lit le cache une fois par token du bloc, et le contexte du drafter est recopié
-à chaque passe.
+(3 000 à 5 000 tokens de contexte).
+
+Sur une conversation longue et variée (`evaluation/conversation_variee.json` :
+explication, code Python et tests, courriel, calcul, résumé en anglais, plan
+d'article ; prompt de 300 à 6 100 tokens, 11 000 tokens générés par variante) :
+57,7 tokens/s contre 51,6, soit **×1,12**. L'acceptation tient sur toute la
+conversation (2,1 à 2,6 tokens par passe à K = 2) ; c'est le coût par passe qui
+suit le contexte. Coûts mesurés en fonction du contexte :
+
+| Contexte (tokens) | 500 | 2 000 | 4 000 | 8 000 |
+|---|---|---|---|---|
+| décodage, 1 token (ms) | 15,0 | 16,0 | 18,2 | 19,6 |
+| vérification de 3 tokens, attention token par token (ms) | 19,0 | 20,6 | 22,2 | 27,6 |
+| même vérification, chemin générique (ms) | 20,5 | 28,6 | 40,9 | 62,6 |
+| drafter (ms) | 4,4 | 4,9 | 5,6 | 6,6 |
+| recopie du contexte du drafter (ms) | 0,24 | 0,50 | 0,86 | 1,61 |
+
+L'attention token par token tient la longueur (le chemin générique, lui,
+s'effondre) ; vérification et décodage grandissent à peu près ensemble, et le
+drafter gagne 2 ms entre 500 et 8 000 tokens. Le gain se joue donc sur un
+coût fixe par passe d'environ 10 ms (drafter, loi d'échantillonnage,
+synchronisations) face à 2 à 2,5 tokens gardés.
 
 En résumé, la boucle greedy plafonne vers ×1,2 sur M5 : une vérification de 4
 tokens coûte encore près de deux pas de décodage (27 ms contre 14-15), et le

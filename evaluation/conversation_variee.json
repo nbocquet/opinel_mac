@@ -1,0 +1,14 @@
+{
+  "description": "Conversation longue et variée pour mesurer le décodage spéculatif : explication, code, rédaction, calcul, anglais, résumé ; les réponses s'allongent et le contexte dépasse plusieurs milliers de tokens.",
+  "attendu": "Des réponses complètes et cohérentes d'un tour à l'autre ; aucune référence exacte, la mesure porte sur la vitesse.",
+  "messages": [
+    "Bonjour ! Explique-moi simplement comment fonctionne un moteur à combustion interne à quatre temps.",
+    "Et une voiture électrique, qu'est-ce qui change concrètement pour le conducteur au quotidien ?",
+    "Écris une fonction Python qui lit un fichier CSV de trajets (date, kilomètres, énergie consommée en kWh) et calcule la consommation moyenne en kWh/100 km par mois.",
+    "Ajoute la gestion des lignes mal formées et des tests unitaires avec unittest.",
+    "Rédige un courriel poli à mon syndic pour demander l'installation d'une borne de recharge dans le parking de la copropriété.",
+    "Si je roule 12 000 km par an, avec une consommation de 17 kWh/100 km et un kWh à 0,25 €, combien me coûte l'énergie par an ? Compare avec une voiture essence à 6,5 L/100 km et 1,85 € le litre.",
+    "Now please summarise our whole conversation in English, in five bullet points.",
+    "Merci. Pour finir, propose un plan détaillé d'article de blog intitulé « Passer à l'électrique sans se tromper », avec une introduction rédigée."
+  ]
+}

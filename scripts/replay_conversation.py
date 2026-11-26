@@ -106,8 +106,10 @@ def speed(args):
             totals[name]["tokens"] += turn["tokens"]
             totals[name]["seconds"] += turn["seconds"]
             totals[name]["decode"].append(turn["decode_tokens_per_second"])
-            print(f"[{name}] tour {number} : {turn['tokens']} tokens en {turn['seconds']:.1f} s, "
-                  f"décodage {turn['decode_tokens_per_second']:.1f} tokens/s", flush=True)
+            per_step = f", {turn['tokens_per_step']:.2f} tokens par passe" if turn.get("tokens_per_step") else ""
+            print(f"[{name}] tour {number} : prompt {turn['context_tokens']} tokens, {turn['tokens']} générés en "
+                  f"{turn['seconds']:.1f} s, décodage {turn['decode_tokens_per_second']:.1f} tokens/s{per_step}",
+                  flush=True)
     rates = {name: total["tokens"] / total["seconds"] for name, total in totals.items()}
     for name, total in totals.items():
         print(f"{name:11} : {total['tokens']} tokens en {total['seconds']:.1f} s, {rates[name]:.1f} tokens/s "
