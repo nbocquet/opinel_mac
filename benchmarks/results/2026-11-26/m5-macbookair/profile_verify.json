@@ -1,0 +1,22 @@
+{
+  "mode": "table",
+  "repeats": 20,
+  "milliseconds": {
+    "1 (décodage fusionné)": 15.84520799224265,
+    "1 (chemin générique, OLALA_FUSED=0)": 24.413583480054513,
+    "2": 23.492833512136713,
+    "4": 24.896874994738027,
+    "6": 30.273041513282806,
+    "2 (noyaux de décodage, opinel_verify)": 16.792896029073745,
+    "4 (noyaux de décodage, opinel_verify)": 20.35241649718955,
+    "6 (noyaux de décodage, opinel_verify)": 28.03370848414488
+  },
+  "meta": {
+    "machine": "m5-macbookair",
+    "date": "2026-11-26",
+    "commit": "c90fb6e",
+    "quick": false,
+    "power": "secteur",
+    "olala": {}
+  }
+}

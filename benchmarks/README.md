@@ -11,10 +11,12 @@ Opinel convertis (`models/opinel-n8-mlx-n8`) et ceux de Télégraphe
 (`models/telegraphe`, téléchargés au premier lancement s'ils manquent).
 
 ```
-.venv-mlx/bin/python scripts/bench_suite.py --machine m5-<pseudo>          # série complète, environ 45 min
-.venv-mlx/bin/python scripts/bench_suite.py --machine m5-<pseudo> --quick  # environ 10 min
-.venv-mlx/bin/python scripts/bench_summary.py                              # régénère summary.md
+caffeinate -dimsu .venv-mlx/bin/python scripts/bench_suite.py --machine m5-<pseudo>          # environ 45 min
+caffeinate -dimsu .venv-mlx/bin/python scripts/bench_suite.py --machine m5-<pseudo> --quick  # environ 10 min
+.venv-mlx/bin/python scripts/bench_summary.py                                                # régénère summary.md
 ```
+
+`caffeinate` empêche la mise en veille pendant la série.
 
 L'identifiant est la puce puis un pseudo, en minuscules (`m4-bob`, `m3max-alice`).
 Ni nom d'hôte ni numéro de série : la fiche machine ne contient que la puce, le
@@ -50,6 +52,10 @@ runs de la même machine, celle-ci était chaude ou chargée.
   et spéculatif) prompt par prompt ou tour par tour : mesurées l'une après
   l'autre, les dernières paraîtraient plus lentes. Ne comparer que des rapports
   mesurés dans le même run.
+- **Portable sans ventilateur** (MacBook Air) : la chauffe est plus marquée ;
+  sur la série complète du M5 Air, le décodage normal passe de 77 tokens/s à
+  froid à 55-65 tokens/s en cours de série. Les rapports alternés restent
+  comparables, les débits absolus moins.
 - **Bruit** : d'un run à l'autre, les rapports varient de quelques pourcents.
 
 ## Contribuer
