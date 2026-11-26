@@ -103,6 +103,12 @@ réponse visible. Le raisonnement reste masqué, donc un délai peut précéder 
   changement de découpage du préremplissage, avec ou sans cache, déplace déjà
   les logits d'environ 0,1, ce qui suffit à faire diverger un rejeu greedy
   (`scripts/check_prompt_cache.py`). Les 9 tours prennent 67 s au lieu de 85 s.
+- `--speculatif [K]` (MLX) active le décodage spéculatif Télégraphe : le
+  drafter propose K tokens par passe (par défaut 2 en échantillonné, 3 en
+  greedy), vérifiés en une passe de la cible ; la sortie suit exactement la loi
+  d'échantillonnage. Gain mesuré : ×1,15-1,2 (section Télégraphe). Le cache de
+  prompt reprend aussi le contexte du drafter. Les poids du drafter sont
+  téléchargés à la révision épinglée s'ils manquent dans `models/telegraphe`.
 - `/quit` ou Ctrl-D quitte la session.
 - Ctrl-C pendant une réponse l'interrompt et permet de saisir un nouveau message.
   À l'invite, Ctrl-C quitte la session.
@@ -430,13 +436,13 @@ par mode depuis le terminal du Mac (médiane de 7,7 s par question en `low`,
 .venv-mlx/bin/python scripts/evaluate_gsm8k.py --summary .cache/evaluations/gsm8k-n8-low.json
 ```
 
-## Télégraphe : décodage spéculatif (en cours)
+## Télégraphe : décodage spéculatif
 
 [Télégraphe](https://huggingface.co/maurienne-ai/Olala-v1.0-mini-7A1B-Telegraphe)
 est le drafter de l'équipe Opinel : il propose K tokens d'un coup, que la cible
 vérifie en une seule passe. `opinel_telegraphe.py` le porte en MLX et
-`opinel_speculative.py` fait la boucle greedy (étapes 1 et 2 sur 4 ;
-l'échantillonnage et l'intégration au chat restent à faire). Le drafter lit le
+`opinel_speculative.py` fait la boucle (greedy ou échantillonnage par rejet),
+branchée sur le chat par `--speculatif`. Le drafter lit le
 flux résiduel de la cible après les couches 1, 9, 17, 25 et 33, la table
 d'embedding normalisée de la cible (comme vLLM) et, au choix, sa propre tête
 bf16 ou la tête INT8 de la cible. Les poids sont téléchargés à une révision
@@ -616,8 +622,8 @@ mesurer :
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
 - Télégraphe (§5) : drafter, boucle greedy et vérification par les noyaux de décodage faits,
-  gain ×1,2 à K = 3 en greedy, ×1,15 à K = 2 en échantillonné (rejet exact) ;
-  reste l'intégration au chat ;
+  gain ×1,2 à K = 3 en greedy, ×1,15 à K = 2 en échantillonné (rejet exact),
+  intégré au chat (`--speculatif`) ;
 
 Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans
 cette liste : c'est une limite du modèle, que le moteur ne corrige pas.

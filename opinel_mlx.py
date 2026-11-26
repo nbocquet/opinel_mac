@@ -218,9 +218,26 @@ class PromptCache:
         self.model = model
         self.tokens = []
         self.snapshot = None
+        self.context = None  # Télégraphe's K / V of the same tokens (speculative chat)
 
     def clear(self):
-        self.tokens, self.snapshot = [], None
+        self.tokens, self.snapshot, self.context = [], None, None
+
+    def start_speculative(self, tokens):
+        """Return (cache, drafter context, reused tokens) for a speculative turn."""
+        from mlx_lm.models.cache import make_prompt_cache
+
+        reused = len(self.tokens)
+        if (self.snapshot is not None and self.context is not None and 0 < reused < len(tokens)
+                and tokens[:reused] == self.tokens):
+            return copy.deepcopy(self.snapshot), self.context, reused
+        return make_prompt_cache(self.model), None, 0
+
+    def keep_speculative(self, tokens):
+        """on_prefix of Speculator.prefill: snapshot every prompt token but the last."""
+        def callback(cache, context):
+            self.tokens, self.snapshot, self.context = list(tokens[:-1]), copy.deepcopy(cache), context
+        return callback
 
     def start(self, tokens):
         """Return (cache, tokens still to process, reused tokens)."""
@@ -239,6 +256,54 @@ class PromptCache:
         return callback
 
 
+def speculative_responses(speculator, tokenizer, tokens, max_tokens, sampling, prompt_cache=None, stats=None):
+    """stream_generate's responses (text deltas and statistics) from Telegraphe's speculative loop."""
+    from types import SimpleNamespace
+
+    import mlx.core as mx
+
+    cache = context = None
+    reused = 0
+    on_prefix = None
+    if prompt_cache is not None:
+        cache, context, reused = prompt_cache.start_speculative(tokens)
+        prompt_cache.snapshot = None
+        on_prefix = prompt_cache.keep_speculative(tokens)
+    stats = stats if stats is not None else {}
+    eos = set(tokenizer.eos_token_ids)
+    detokenizer = tokenizer.detokenizer
+    detokenizer.reset()
+    mx.reset_peak_memory()
+    started = time.perf_counter()
+    generated, finish, first = 0, "length", None
+
+    def response(text):
+        decode = time.perf_counter() - first if first is not None else 0.0
+        prefill = stats.get("prefill_seconds") or 1e-9
+        return SimpleNamespace(
+            text=text, generation_tokens=generated, finish_reason=finish if text == "" else None,
+            prompt_tokens=len(tokens) - reused, prompt_tps=(len(tokens) - reused) / prefill,
+            generation_tps=(generated - 1) / decode if generated > 1 and decode > 0 else 0.0,
+            peak_memory=mx.get_peak_memory() / 1e9, reused=reused,
+        )
+
+    for token in speculator.generate(tokens, max_tokens, eos=eos, cache=cache, stats=stats, context=context,
+                                     start=reused, on_prefix=on_prefix, **sampling):
+        if first is None:
+            first = time.perf_counter()
+        generated += 1
+        if token in eos:
+            finish = "stop"
+            break
+        detokenizer.add_token(token)
+        yield response(detokenizer.last_segment)
+    detokenizer.finalize()
+    stats["seconds"] = time.perf_counter() - started
+    last = response(detokenizer.last_segment)
+    last.finish_reason = finish
+    yield last
+
+
 def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_history=False, prompt_cache=None):
     from mlx_lm import stream_generate
     from instructions import resolve
@@ -254,6 +319,24 @@ def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_histo
     if stream:
         print("Olala prépare sa réponse…", file=sys.stderr, flush=True)
     started = time.perf_counter()
+    speculator = getattr(args, "speculator", None)
+    if speculator is not None:
+        sampling = {"temperature": getattr(args, "temperature", 0.0), "top_p": getattr(args, "top_p", 1.0),
+                    "top_k": getattr(args, "top_k", 0)}
+        stats = {}
+        answer, last = collect_response(
+            speculative_responses(speculator, tokenizer, tokens, args.max_new_tokens, sampling, prompt_cache, stats),
+            stream)
+        elapsed = time.perf_counter() - started
+        reuse = f", dont {last.reused} repris du tour précédent" if last.reused else ""
+        per_step = (f", {sum(stats['kept']) / len(stats['kept']):.2f} tokens par passe"
+                    if stats.get("kept") else "")
+        print(f"Génération MLX spéculative (Télégraphe, K = {speculator.steps}) : {last.generation_tokens} tokens "
+              f"en {elapsed:.1f} s ({last.generation_tokens / elapsed:.2f} tokens/s, préremplissage compris). "
+              f"Préremplissage : {len(tokens)} tokens{reuse}, {last.prompt_tokens} calculés à "
+              f"{last.prompt_tps:.0f} tokens/s. Décodage : {last.generation_tps:.2f} tokens/s{per_step}. "
+              f"Pic mémoire : {last.peak_memory:.1f} Go.", file=sys.stderr)
+        return answer, retained
     extra, reused, remaining = {}, 0, tokens
     if prompt_cache is not None:
         cache, remaining, reused = prompt_cache.start(tokens)

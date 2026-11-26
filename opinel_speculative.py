@@ -148,23 +148,50 @@ class Speculator:
         self.records.clear()
         return logits[0], aux
 
-    def prefill(self, prompt, cache, chunk=2048):
-        """Prefill the whole prompt; return the target's greedy first token and the drafter's context."""
-        keys = values = None
-        logits = None
-        for start in range(0, len(prompt), chunk):
-            logits, aux = self._forward(prompt[start:start + chunk], cache)
-            k, v = self.drafter.context_kv(aux, start=start)
-            keys = k if keys is None else [mx.concatenate([a, b], axis=1) for a, b in zip(keys, k)]
-            values = v if values is None else [mx.concatenate([a, b], axis=1) for a, b in zip(values, v)]
-            mx.eval(logits, keys, values)
-        return int(mx.argmax(logits[-1])), (keys, values), logits[-1]
+    def _extend(self, context, tokens, cache, start):
+        """Forward tokens (positions start..) and append their drafter K / V to context; returns the logits."""
+        logits, aux = self._forward(tokens, cache)
+        k, v = self.drafter.context_kv(aux, start=start)
+        if context is None:
+            context = (k, v)
+        else:
+            context = tuple([mx.concatenate([a, b], axis=1) for a, b in zip(old, new)]
+                            for old, new in zip(context, (k, v)))
+        mx.eval(logits, context)
+        return logits, context
+
+    def prefill(self, prompt, cache, context=None, start=0, on_prefix=None, chunk=2048):
+        """Prefill prompt[start:] on a cache (and drafter context) that already hold prompt[:start].
+
+        Returns (greedy first token, drafter context, logits of the last position). on_prefix(cache,
+        context) is called once every token but the last is in: the prompt cache snapshot of the chat.
+        The last token goes alone through the layer-by-layer path (OLALA_FUSED=0): the fused decode
+        would skip the layers whose output feeds the drafter.
+        """
+        end = len(prompt) - 1
+        if not 0 <= start <= end:
+            raise ValueError("Préremplissage spéculatif : reprise au-delà du prompt.")
+        for offset in range(start, end, chunk):
+            _, context = self._extend(context, prompt[offset:min(offset + chunk, end)], cache, offset)
+        if on_prefix is not None:
+            on_prefix(cache, context)
+        fused = os.environ.get("OLALA_FUSED")
+        os.environ["OLALA_FUSED"] = "0"
+        try:
+            logits, context = self._extend(context, prompt[end:], cache, end)
+        finally:
+            if fused is None:
+                del os.environ["OLALA_FUSED"]
+            else:
+                os.environ["OLALA_FUSED"] = fused
+        return int(mx.argmax(logits[-1])), context, logits[-1]
 
     def generate(self, prompt, max_tokens, eos=(), cache=None, stats=None, temperature=0.0, top_p=1.0, top_k=0,
-                 seed=None):
+                 seed=None, context=None, start=0, on_prefix=None):
         """Yield the target's tokens, several per verify forward: greedy at temperature 0, otherwise
         sampled from the vLLM-order law (temperature, top-k, top-p) by rejection, which keeps that
-        law exact whatever the drafter proposes."""
+        law exact whatever the drafter proposes. cache / context / start: resume a prefill that
+        already holds prompt[:start] (prompt cache of the chat); on_prefix: see prefill."""
         from opinel_mlx import vllm_law
 
         sampling = temperature > 0
@@ -183,7 +210,9 @@ class Speculator:
         cache = cache if cache is not None else make_prompt_cache(self.model)
         stats = stats if stats is not None else {}
         stats.update(steps=0, accepted=[], kept=[], draft_seconds=0.0, verify_seconds=0.0)
-        anchor, (keys, values), last = self.prefill(prompt, cache)
+        began = time.perf_counter()
+        anchor, (keys, values), last = self.prefill(prompt, cache, context, start, on_prefix)
+        stats["prefill_seconds"] = time.perf_counter() - began
         if sampling:
             ids, probs = law(last[None])
             anchor = int(ids[0][rng.choice(ids.shape[1], p=probs[0] / probs[0].sum())])

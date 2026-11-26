@@ -78,6 +78,17 @@ class BudgetTests(unittest.TestCase):
     def test_explicit_budget_is_respected(self):
         self.assertEqual(parse_args(["chat", "--max-new-tokens", "128"]).max_new_tokens, 128)
 
+    def test_speculative_block_defaults_to_the_measured_best(self):
+        self.assertIsNone(parse_args(["chat", "--backend", "mlx"]).speculatif)
+        self.assertEqual(parse_args(["chat", "--backend", "mlx", "--speculatif"]).speculatif, 2)
+        self.assertEqual(parse_args(["generate", "--backend", "mlx", "--speculatif"]).speculatif, 3)
+        self.assertEqual(parse_args(["chat", "--backend", "mlx", "--speculatif", "4"]).speculatif, 4)
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                parse_args(["chat", "--speculatif"])
+            with self.assertRaises(SystemExit):
+                parse_args(["chat", "--backend", "mlx", "--speculatif", "8"])
+
     @unittest.skipIf(torch is None, "PyTorch non installé")
     def test_exhausted_reasoning_budget_explains_how_to_retry(self):
         args = SimpleNamespace(device="cpu", reasoning_effort="low", max_new_tokens=256)

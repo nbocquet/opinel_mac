@@ -48,5 +48,73 @@ class RejectionStepTests(unittest.TestCase):
         self.assertEqual(accepted, 2)
 
 
+class FakeDetokenizer:
+    def __init__(self):
+        self.text, self.offset = "", 0
+
+    def reset(self):
+        self.text, self.offset = "", 0
+
+    def add_token(self, token):
+        self.text += f"<{token}>"
+
+    def finalize(self):
+        pass
+
+    @property
+    def last_segment(self):
+        segment, self.offset = self.text[self.offset:], len(self.text)
+        return segment
+
+
+class FakeSpeculator:
+    steps = 2
+
+    def __init__(self, tokens):
+        self.tokens, self.calls = tokens, []
+
+    def generate(self, prompt, max_tokens, eos=(), cache=None, stats=None, context=None, start=0, on_prefix=None,
+                 **sampling):
+        self.calls.append({"start": start, "context": context})
+        stats.update(prefill_seconds=0.01, kept=[2, 1])
+        if on_prefix is not None:
+            on_prefix(["cache"], ("keys", "values"))
+        for token in self.tokens[:max_tokens]:
+            yield token
+            if token in eos:
+                return
+
+
+@unittest.skipIf(mx is None, "MLX absent de cet environnement")
+class SpeculativeResponsesTests(unittest.TestCase):
+    def run_turn(self, speculator, tokens, prompt_cache=None, max_tokens=10):
+        from types import SimpleNamespace
+        from opinel_mlx import speculative_responses
+        tokenizer = SimpleNamespace(eos_token_ids=[0], detokenizer=FakeDetokenizer())
+        return list(speculative_responses(speculator, tokenizer, tokens, max_tokens, {}, prompt_cache, {}))
+
+    def test_text_stops_at_eos_with_stop_reason(self):
+        responses = self.run_turn(FakeSpeculator([5, 6, 0, 7]), [1, 2, 3])
+        self.assertEqual("".join(r.text for r in responses), "<5><6>")
+        self.assertEqual(responses[-1].finish_reason, "stop")
+        self.assertEqual(responses[-1].generation_tokens, 3)
+
+    def test_budget_exhaustion_reports_length(self):
+        responses = self.run_turn(FakeSpeculator([5, 6, 7]), [1, 2, 3], max_tokens=2)
+        self.assertEqual(responses[-1].finish_reason, "length")
+
+    def test_next_turn_resumes_the_prompt_and_drafter_context(self):
+        from opinel_mlx import PromptCache
+        from unittest.mock import patch
+        cache = PromptCache(model=None)
+        speculator = FakeSpeculator([5, 0])
+        with patch("mlx_lm.models.cache.make_prompt_cache", return_value=["fresh"]):
+            self.run_turn(speculator, [1, 2, 3], cache)
+        self.assertEqual(cache.tokens, [1, 2])
+        responses = self.run_turn(speculator, [1, 2, 3, 4, 9], cache)
+        self.assertEqual(speculator.calls[-1], {"start": 2, "context": ("keys", "values")})
+        self.assertEqual(responses[-1].reused, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

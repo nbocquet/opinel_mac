@@ -213,6 +213,22 @@ def generate_turn(model, tokenizer, messages, args, stream=False, trim_history=F
     return answer, retained
 
 
+def load_speculator(model, steps, offline=False):
+    """Télégraphe drafter (weights in models/telegraphe, downloaded at the pinned revision if missing)."""
+    from opinel_speculative import Speculator
+    from opinel_telegraphe import DEFAULT_FOLDER, Telegraphe, prepare
+
+    if not (DEFAULT_FOLDER / "mask_embedding.npy").exists():
+        if offline:
+            raise ValueError(f"Poids Télégraphe absents de {DEFAULT_FOLDER} (mode hors ligne).")
+        print("Téléchargement du drafter Télégraphe…", file=sys.stderr)
+        prepare(DEFAULT_FOLDER)
+    drafter = Telegraphe(DEFAULT_FOLDER, embedding=model.model.embedding.weight, target_head=model.lm_head,
+                         quantize_bits=8)
+    print(f"Décodage spéculatif Télégraphe : {steps} tokens proposés par passe.", file=sys.stderr)
+    return Speculator(model, drafter, steps=steps)
+
+
 def run_chat(model, tokenizer, args):
     messages = []
     prompt_cache = None
@@ -466,6 +482,9 @@ def parse_args(argv=None):
                         help="Consignes développeur ajoutées au template (expérimental)")
     parser.add_argument("--no-prompt-cache", action="store_true",
                         help="MLX : recalculer tout le prompt à chaque tour du chat")
+    parser.add_argument("--speculatif", type=int, nargs="?", const=0, metavar="K",
+                        help="MLX : décodage spéculatif Télégraphe, K tokens proposés par passe "
+                             "(par défaut 2 en échantillonné, 3 en greedy)")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--model-dir", type=Path, help="Checkpoint local déjà téléchargé")
     parser.add_argument("--recipe", choices=["n8", "q8", "bf16"], default="n8",
@@ -482,6 +501,13 @@ def parse_args(argv=None):
             setattr(args, key, value)
     if args.temperature < 0 or not 0 < args.top_p <= 1 or args.top_k < 0:
         parser.error("Échantillonnage invalide : temperature ≥ 0, 0 < top-p ≤ 1, top-k ≥ 0.")
+    if args.speculatif is not None:
+        if args.backend != "mlx":
+            parser.error("--speculatif demande --backend mlx.")
+        if args.speculatif == 0:
+            args.speculatif = 2 if args.temperature > 0 else 3
+        if not 1 <= args.speculatif <= 7:
+            parser.error("--speculatif : K entre 1 et 7 (bloc de 8 tokens au plus).")
     mlx = args.backend == "mlx"
     budget_defaulted = args.max_new_tokens is None
     if budget_defaulted:
@@ -527,6 +553,8 @@ def main():
             started = time.perf_counter()
             model, tokenizer = load_mlx_model(folder, args.device)
             print(f"Opinel chargé avec le moteur OVH MLX en {time.perf_counter() - started:.1f} s.", file=sys.stderr)
+            if args.speculatif is not None:
+                args.speculator = load_speculator(model, args.speculatif, args.offline)
             if args.command == "chat":
                 return run_chat(model, tokenizer, args)
             answer, _ = generate_turn(model, tokenizer, [{"role": "user", "content": args.prompt}], args)
