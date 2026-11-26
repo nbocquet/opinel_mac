@@ -40,6 +40,9 @@ def main():
     parser.add_argument("--steps", type=int, nargs="+", default=[3, 5, 7], help="Valeurs de K")
     parser.add_argument("--own-head", action="store_true", help="Tête bf16 du drafter au lieu de la tête INT8 de la cible")
     parser.add_argument("--bf16-layers", action="store_true", help="Couches du drafter en bf16 au lieu de 8 bits")
+    parser.add_argument("--head-vocab", type=int, default=None,
+                        help="Tête du drafter restreinte aux N tokens les plus fréquents (défaut : celle du chat, "
+                             "65536 ; 0 : tête complète)")
     parser.add_argument("--verify", choices=["auto", "decode", "prefill"], default="auto",
                         help="Chemin de vérification : noyaux de décodage (opinel_verify), chemin de préremplissage "
                              "d'OVH, ou auto (le plus rapide sur cette machine, chronométré au chargement)")
@@ -75,6 +78,9 @@ def main():
     drafter = Telegraphe(args.drafter_dir, embedding=model.model.embedding.weight,
                          target_head=None if args.own_head else model.lm_head,
                          quantize_bits=None if args.bf16_layers else 8)
+    from opinel_telegraphe import HEAD_VOCAB, frequent_ids
+    head_vocab = HEAD_VOCAB if args.head_vocab is None else args.head_vocab
+    drafter.restrict_head(frequent_ids(head_vocab))
     eos = set(tokenizer.eos_token_ids)
     prompts = json.loads(args.prompts.read_text())["prompts"][:args.limit]
     from opinel_mlx import make_vllm_sampler
@@ -137,7 +143,8 @@ def main():
     print(f"Décodage normal : {plain_rate:.1f} tokens/s ({len(encoded)} prompts, jusqu'à {args.tokens} tokens, "
           f"mesures alternées).", flush=True)
 
-    report = {"plain_tokens_per_second": plain_rate, "interleaved": True, "sampling": sampling, "speculative": {}}
+    report = {"plain_tokens_per_second": plain_rate, "interleaved": True, "sampling": sampling,
+              "head_vocab": head_vocab, "speculative": {}}
     for variant in variants:
         steps, submit = variant
         label = f"K = {steps}" + ("" if submit is None else f", envoi toutes les {submit or '—'} couches")

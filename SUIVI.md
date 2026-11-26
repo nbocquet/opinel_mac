@@ -709,6 +709,46 @@ synchrone et avec `OLALA_DETERMINISTIC=1` (4 sorties greedy identiques sur
 8). Le vrai levier est de supprimer le rejeu : le noyau de vérification
 écrirait au passage l'état de chaque position (issue #7).
 
+**Tête restreinte du drafter** (issue #5, piste de l'équipe Opinel). La tête
+INT8 partagée (152k lignes, 233 Mo lus par passe) est le premier poste du
+drafter. `restrict_head` ne garde que les lignes des tokens les plus fréquents :
+les 16 candidats sont choisis parmi elles, et la loi q reste une loi sur les
+candidats proposés, si bien que l'échantillonnage par rejet reste exact. Le
+classement vient de `scripts/telegraphe_vocab.py` : la cible génère 101
+réponses, réflexion comprise, avec les réglages du chat (suites de fiabilité,
+conversations, GSM8K à partir de la question 300 ; aucun des prompts de
+mesure), soit 35 601 tokens dont 3 313 distincts ; les autres suivent dans
+l'ordre des ids (`evaluation/telegraphe_vocab.json`, 65 536 rangs).
+
+Acceptation hors ligne (`telegraphe_acceptance.py --shared-head
+--quantize-bits 8 --head-vocab ...`, 16 prompts de mesure) :
+
+| Tête | Couverture des choix de la cible | K = 3 | K = 5 | K = 7 |
+|---|---|---|---|---|
+| complète | 100 % | 2,812 | 3,433 | 3,813 |
+| 64k | 98,9 % | 2,786 | 3,379 | 3,729 |
+| 32k | 95,2 % | 2,707 | 3,233 | 3,519 |
+| 16k | 91,1 % | 2,605 | 3,055 | 3,279 |
+| 8k | 86,3 % | 2,506 | 2,902 | 3,099 |
+
+Dans la boucle, mesures alternées sur 16 prompts × 256 tokens (Mac chaud :
+débits absolus plus bas que d'habitude, rapports comparables) :
+
+| Tête | Greedy K = 3 | Échantillonné K = 2 | Drafter par passe |
+|---|---|---|---|
+| 64k, premier run | ×1,053 | ×1,037 | 8,3 → 6,4 ms |
+| 64k, second run | ×1,062 | ×1,023 | 8,5 → 6,6 ms |
+| 32k | ×1,027 | ×1,050 | 8,3 → 6,1 ms |
+
+Le temps du drafter comprend ici le retour arrière évalué sans attente
+(`ASYNC_TAIL`). Les tokens gardés par passe ne bougent presque pas à 64k
+(2,69 contre 2,68 en greedy). **La tête de 64k tokens devient celle du chat et
+de `check_speculative.py`** (`--head-vocab 0` pour la tête complète) : environ
++5 % en greedy, +3 % en échantillonné. Notre argument passé (« 94 % de
+couverture ») portait sur l'ordre des ids et sur la couverture d'un texte, pas
+sur l'acceptation : classés par fréquence dans les réponses de la cible, 64k
+tokens couvrent 98,9 % de ses choix.
+
 ## Benchmarks multi-machines
 
 `benchmarks/` rassemble des mesures comparables d'une machine à l'autre :

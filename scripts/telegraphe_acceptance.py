@@ -37,6 +37,10 @@ def main():
                         help="Lignes brutes de la table d'embedding au lieu des lignes normalisées (vLLM)")
     parser.add_argument("--shared-head", action="store_true", help="Tête INT8 de la cible au lieu de la tête bf16")
     parser.add_argument("--quantize-bits", type=int, choices=[4, 8], help="Couches du drafter quantifiées")
+    parser.add_argument("--head-vocab", type=int, nargs="+", default=[0],
+                        help="Tête restreinte aux N tokens les plus fréquents (0 : tête complète) ; "
+                             "plusieurs valeurs : mesurées sur les mêmes continuations")
+    parser.add_argument("--vocab-file", type=Path, default=ROOT / "evaluation" / "telegraphe_vocab.json")
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -59,8 +63,11 @@ def main():
                          target_head=model.lm_head if args.shared_head else None, quantize_bits=args.quantize_bits)
     records = capture_aux(model)
     prompts = json.loads(args.prompts.read_text())["prompts"][:args.limit]
+    ranked = json.loads(args.vocab_file.read_text())["ranked"] if any(args.head_vocab) else []
+    heads = {n: (set(ranked[:n]) if n else None) for n in args.head_vocab}
 
-    totals = {k: [] for k in CARD}
+    totals = {n: {k: [] for k in CARD} for n in heads}
+    covered = {n: [0, 0] for n in heads}
     per_prompt = []
     for number, item in enumerate(prompts, 1):
         text = tokenizer.apply_chat_template([{"role": "user", "content": item}], tokenize=False,
@@ -88,39 +95,49 @@ def main():
         mx.eval(context)
 
         anchors = list(range(len(prompt), len(sequence) - 1))
-        accepted = {k: [] for k in CARD}
-        started = time.perf_counter()
-        for begin in range(0, len(anchors), args.batch):
-            chunk = anchors[begin:begin + args.batch]
-            drafts, _ = drafter.draft([sequence[t] for t in chunk], chunk, context, STEPS)
-            for t, draft in zip(chunk, drafts):
-                count = 0
-                for j in range(STEPS):
-                    position = t + j
-                    if position >= len(target) or draft[j] != target[position]:
-                        break
-                    # The next draft token is only checked if the target's choice is the token
-                    # actually in the sequence (the context the drafter's next step assumes).
-                    if position + 1 >= len(sequence) or sequence[position + 1] != target[position]:
+        for n, allowed in heads.items():
+            drafter.restrict_head(ranked[:n] if n else None)
+            if allowed is not None:
+                covered[n][0] += sum(int(target[t]) in allowed for t in anchors)
+                covered[n][1] += len(anchors)
+            accepted = {k: [] for k in CARD}
+            started = time.perf_counter()
+            for begin in range(0, len(anchors), args.batch):
+                chunk = anchors[begin:begin + args.batch]
+                drafts, _ = drafter.draft([sequence[t] for t in chunk], chunk, context, STEPS)
+                for t, draft in zip(chunk, drafts):
+                    count = 0
+                    for j in range(STEPS):
+                        position = t + j
+                        if position >= len(target) or draft[j] != target[position]:
+                            break
+                        # The next draft token is only checked if the target's choice is the token
+                        # actually in the sequence (the context the drafter's next step assumes).
+                        if position + 1 >= len(sequence) or sequence[position + 1] != target[position]:
+                            count += 1
+                            break
                         count += 1
-                        break
-                    count += 1
-                for k in CARD:
-                    accepted[k].append(min(count, k) + 1)
-        seconds = time.perf_counter() - started
-        row = {"id": item[:28].replace("\n", " "), "prompt_tokens": len(prompt), "anchors": len(anchors),
-               **{f"tau_{k}": float(np.mean(accepted[k])) for k in CARD},
-               "draft_ms_per_block": 1000 * seconds / max(1, len(anchors))}
-        per_prompt.append(row)
-        for k in CARD:
-            totals[k].extend(accepted[k])
-        print(f"{number:>2}/{len(prompts)} {row['id']:<28} {len(anchors):>4} positions   "
-              + "   ".join(f"K={k} : {row[f'tau_{k}']:.2f}" for k in CARD), flush=True)
+                    for k in CARD:
+                        accepted[k].append(min(count, k) + 1)
+            seconds = time.perf_counter() - started
+            row = {"id": item[:28].replace("\n", " "), "head_vocab": n, "prompt_tokens": len(prompt),
+                     "anchors": len(anchors), **{f"tau_{k}": float(np.mean(accepted[k])) for k in CARD},
+                     "draft_ms_per_block": 1000 * seconds / max(1, len(anchors))}
+            per_prompt.append(row)
+            for k in CARD:
+                  totals[n][k].extend(accepted[k])
+            print(f"{number:>2}/{len(prompts)} {row['id']:<28} {len(anchors):>4} positions  tête {n or 'complète'}  "
+                    + "   ".join(f"K={k} : {row[f'tau_{k}']:.2f}" for k in CARD), flush=True)
+        drafter.restrict_head(None)
 
-    summary = {f"tau_{k}": float(np.mean(totals[k])) for k in CARD}
+    summaries = {n: {f"tau_{k}": float(np.mean(totals[n][k])) for k in CARD} for n in heads}
+    summary = summaries[args.head_vocab[0]]
     print("\nTokens par passe (acceptés + 1), toutes positions :")
+    for n, values in summaries.items():
+        cover = f", couverture des choix de la cible {covered[n][0] / covered[n][1]:.1%}" if covered[n][1] else ""
+        print(f"  tête {n or 'complète'}{cover} : " + "   ".join(f"K = {k} : {values[f'tau_{k}']:.3f}" for k in CARD))
     for k in CARD:
-        print(f"  K = {k} : {summary[f'tau_{k}']:.2f}   (fiche, RTX 5090, 2 000 réponses : {CARD[k]:.2f})")
+        print(f"  (fiche, RTX 5090, 2 000 réponses, K = {k} : {CARD[k]:.2f})")
     print(f"Embeddings : {'bruts' if args.raw_embeddings else 'normalisés (comme vLLM)'} ; tête : "
           f"{'INT8 de la cible' if args.shared_head else 'bf16 du drafter'} ; couches : "
           f"{f'{args.quantize_bits} bits' if args.quantize_bits else 'bf16'}.")
@@ -128,6 +145,9 @@ def main():
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps({"raw_embeddings": args.raw_embeddings, "shared_head": args.shared_head,
                                            "quantize_bits": args.quantize_bits, "summary": summary,
+                                           "head_vocab": {str(n): {**summaries[n], "coverage": (
+                                               covered[n][0] / covered[n][1] if covered[n][1] else 1.0)}
+                                               for n in heads},
                                            "prompts": per_prompt}, ensure_ascii=False, indent=2) + "\n")
     return 0
 

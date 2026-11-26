@@ -125,6 +125,7 @@ class Telegraphe:
             embedding = table.astype(mx.bfloat16)
         self.embedding = embedding
         self.target_head = target_head
+        self.head_ids = None  # restricted head: the vocabulary ids its rows stand for (restrict_head)
         if target_head is not None:
             del self.w["lm_head.weight"]
         self.fuse_projections()
@@ -157,9 +158,33 @@ class Telegraphe:
         return linear(x, self.w[name])
 
     def head_logits(self, hidden):
+        if self.head_ids is not None:
+            weight, scales, biases = self.small_head
+            if scales is None:
+                return linear(hidden, weight)
+            head = self.target_head
+            return mx.quantized_matmul(hidden, weight, scales, biases, transpose=True, group_size=head.group_size,
+                                       bits=head.bits)
         if self.target_head is not None:
             return self.target_head(hidden)
         return linear(hidden, self.p("lm_head.weight"))
+
+    def restrict_head(self, ids):
+        """Draft candidates only among `ids` (the most frequent tokens, issue #5): the head reads those
+        rows alone, a fraction of the 152k-row matrix. None restores the full head. The transition
+        scores and the draft law q are unchanged in form: q stays a law over the proposed candidates,
+        so the rejection sampling keeps the target's law exact."""
+        if ids is None:
+            self.head_ids, self.small_head = None, None
+            return
+        ids = mx.array(sorted(set(int(i) for i in ids)), dtype=mx.int32)
+        head = self.target_head
+        if head is None:
+            self.small_head = (self.p("lm_head.weight")[ids], None, None)
+        else:
+            self.small_head = (head.weight[ids], head.scales[ids], head.biases[ids])
+        self.head_ids = ids
+        mx.eval(self.head_ids, [x for x in self.small_head if x is not None])
 
     def head_rows(self, ids):
         """fp32 rows of the head for token ids: what its matmul multiplies by (dequantized in fp32)."""
@@ -316,7 +341,8 @@ class Telegraphe:
         """Top-k candidate ids (B, steps, k) of the drafter's head at the mask positions."""
         logits = self.head_logits(hidden[:, 1:]).astype(mx.float32)
         # the last top_k of an ascending partition: no negated copy of the vocabulary-wide logits
-        return mx.argpartition(logits, kth=logits.shape[-1] - self.top_k, axis=-1)[..., -self.top_k:]
+        top = mx.argpartition(logits, kth=logits.shape[-1] - self.top_k, axis=-1)[..., -self.top_k:]
+        return top if self.head_ids is None else self.head_ids[top]
 
     def transition_scores(self, candidate_ids, final_pre, anchors):
         """scores (B, steps, k_prev, k): exact fp32 last write with each candidate predecessor."""
@@ -374,6 +400,18 @@ class Telegraphe:
 
 
 COMPILE = True  # mx.compile the fixed-shape parts of the draft layers
+HEAD_VOCAB = 65536  # restricted head of the chat: the most frequent target tokens (issue #5)
+VOCAB_FILE = Path(__file__).resolve().parent / "evaluation" / "telegraphe_vocab.json"
+
+
+def frequent_ids(count=HEAD_VOCAB, path=VOCAB_FILE):
+    """The `count` most frequent ids of the target (scripts/telegraphe_vocab.py), or None for the full head."""
+    if not count:
+        return None
+    ranked = json.loads(Path(path).read_text())["ranked"]
+    if count > len(ranked):
+        raise ValueError(f"{path} ne classe que {len(ranked)} tokens.")
+    return ranked[:count]
 
 
 class DraftContext:
