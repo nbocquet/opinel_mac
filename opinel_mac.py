@@ -160,10 +160,10 @@ def instructions_text(args):
     return resolve(getattr(args, "instructions", "aucune"))
 
 
-def generate_turn(model, tokenizer, messages, args, stream=False, trim_history=False):
+def generate_turn(model, tokenizer, messages, args, stream=False, trim_history=False, prompt_cache=None):
     if getattr(args, "backend", "torch") == "mlx":
         from opinel_mlx import generate_turn_mlx
-        return generate_turn_mlx(model, tokenizer, messages, args, stream, trim_history)
+        return generate_turn_mlx(model, tokenizer, messages, args, stream, trim_history, prompt_cache)
     import torch
 
     inputs, retained = prepare_turn(
@@ -215,6 +215,10 @@ def generate_turn(model, tokenizer, messages, args, stream=False, trim_history=F
 
 def run_chat(model, tokenizer, args):
     messages = []
+    prompt_cache = None
+    if getattr(args, "backend", "torch") == "mlx" and not getattr(args, "no_prompt_cache", False):
+        from opinel_mlx import PromptCache
+        prompt_cache = PromptCache(model)
     context = getattr(args, "context_length", None)
     suffix = f" Contexte : {context} tokens." if context is not None else ""
     print(f"Opinel est prêt.{suffix} /reset : effacer l'historique · /quit : quitter")
@@ -230,6 +234,8 @@ def run_chat(model, tokenizer, args):
             return 0
         if prompt == "/reset":
             messages.clear()
+            if prompt_cache is not None:
+                prompt_cache.clear()
             print("Historique effacé. Le modèle reste chargé.")
             continue
         if prompt.startswith("/"):
@@ -238,7 +244,7 @@ def run_chat(model, tokenizer, args):
         candidate = messages + [{"role": "user", "content": prompt}]
         try:
             answer, retained = generate_turn(
-                model, tokenizer, candidate, args, stream=True, trim_history=True,
+                model, tokenizer, candidate, args, stream=True, trim_history=True, prompt_cache=prompt_cache,
             )
         except KeyboardInterrupt:
             print("Réponse interrompue ; échange non conservé.", file=sys.stderr)
@@ -458,6 +464,8 @@ def parse_args(argv=None):
     parser.add_argument("--top-k", type=int, help="Par défaut 40 en chat, 0 (désactivé) sinon")
     parser.add_argument("--instructions", choices=["aucune", "opinel-fr-v1"], default="aucune",
                         help="Consignes développeur ajoutées au template (expérimental)")
+    parser.add_argument("--no-prompt-cache", action="store_true",
+                        help="MLX : recalculer tout le prompt à chaque tour du chat")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--model-dir", type=Path, help="Checkpoint local déjà téléchargé")
     parser.add_argument("--recipe", choices=["n8", "q8", "bf16"], default="n8",

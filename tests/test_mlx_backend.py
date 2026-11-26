@@ -191,3 +191,88 @@ class VllmSamplerTests(unittest.TestCase):
 
     def test_without_filters_every_token_can_be_drawn(self):
         self.assertEqual(self.draws([0.0, 0.1, 0.2], temperature=1.0, top_p=1.0, top_k=0), {0, 1, 2})
+
+
+class RunningSumModel:
+    """Toy recurrent model: next token = (sum of every token seen) mod 7, state in an ArraysCache."""
+
+    vocab = 7
+
+    def __init__(self):
+        self.processed = 0
+
+    def make_cache(self):
+        from mlx_lm.models.cache import ArraysCache
+        return [ArraysCache(1)]
+
+    def __call__(self, inputs, cache=None, **kwargs):
+        state = cache[0][0] if cache[0][0] is not None else mx.zeros((inputs.shape[0], 1), dtype=mx.int32)
+        sums = state + mx.cumsum(inputs.astype(mx.int32), axis=1)
+        cache[0][0] = sums[:, -1:]
+        self.processed += inputs.shape[1]
+        return mx.where(mx.arange(self.vocab) == (sums % self.vocab)[..., None], 10.0, 0.0)
+
+
+@unittest.skipIf(mx is None, "MLX absent de cet environnement")
+class PromptCacheTests(unittest.TestCase):
+    def setUp(self):
+        mx.set_default_device(mx.cpu)
+
+    def run_turn(self, model, tokens, prompt_cache=None, steps=5):
+        from mlx_lm.generate import generate_step
+        extra = {}
+        if prompt_cache is not None:
+            cache, tokens_left, reused = prompt_cache.start(tokens)
+            extra = {"prompt_cache": cache, "prompt_progress_callback": prompt_cache.progress(tokens, cache)}
+        else:
+            tokens_left, reused = tokens, 0
+        out = [int(token) for token, _ in generate_step(
+            mx.array(tokens_left), model, max_tokens=steps,
+            sampler=lambda logprobs: mx.argmax(logprobs, axis=-1), **extra)]
+        return out, reused
+
+    def test_next_turn_reuses_the_prompt_but_not_the_hidden_generation(self):
+        from opinel_mlx import PromptCache
+        model = RunningSumModel()
+        cache = PromptCache(model)
+        first = [3, 1, 4, 1, 5]
+        generated, reused = self.run_turn(model, first, cache)
+        self.assertEqual(reused, 0)
+        self.assertEqual(cache.tokens, first[:-1])
+        # The next prompt renders the answer differently from what was generated (no reasoning).
+        second = first + [6, 2, 6, 5]
+        model.processed = 0
+        with_cache, reused = self.run_turn(model, second, cache)
+        self.assertEqual(reused, len(first) - 1)
+        fresh = RunningSumModel()
+        self.assertEqual(with_cache, self.run_turn(fresh, second)[0])
+        self.assertEqual(fresh.processed - model.processed, reused)
+
+    def test_a_prompt_that_is_not_an_extension_is_computed_from_scratch(self):
+        from opinel_mlx import PromptCache
+        model = RunningSumModel()
+        cache = PromptCache(model)
+        self.run_turn(model, [3, 1, 4, 1, 5], cache)
+        trimmed = [4, 1, 5, 9, 2]  # an old exchange was removed
+        output, reused = self.run_turn(model, trimmed, cache)
+        self.assertEqual(reused, 0)
+        self.assertEqual(output, self.run_turn(RunningSumModel(), trimmed)[0])
+        cache.clear()
+        self.assertEqual(self.run_turn(model, trimmed + [1], cache)[1], 0)
+
+    def test_a_turn_does_not_alter_the_snapshot_it_started_from(self):
+        from opinel_mlx import PromptCache
+        model = RunningSumModel()
+        cache = PromptCache(model)
+        base = [2, 2, 2]
+        self.run_turn(model, base, cache)
+        saved = (cache.tokens, cache.snapshot)
+        self.run_turn(model, base + [1, 1], cache)
+        cache.tokens, cache.snapshot = saved
+        other, reused = self.run_turn(model, base + [5, 5], cache)
+        self.assertEqual(reused, len(base) - 1)
+        self.assertEqual(other, self.run_turn(RunningSumModel(), base + [5, 5])[0])
+
+    def test_chat_option_disables_the_reuse(self):
+        self.assertFalse(parse_args(["chat", "--backend", "mlx"]).no_prompt_cache)
+        self.assertTrue(parse_args(["chat", "--backend", "mlx", "--no-prompt-cache"]).no_prompt_cache)

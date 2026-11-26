@@ -1,5 +1,6 @@
 """Opinel inference through the pinned OVH Olala MLX/Metal implementation."""
 
+import copy
 import importlib.metadata
 import json
 import os
@@ -190,7 +191,43 @@ def collect_response(responses, stream=False, max_budget=MLX_MAX_NEW_TOKENS, cou
     return answer, last
 
 
-def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_history=False):
+class PromptCache:
+    """Reuse the previous turn's prefill in a chat.
+
+    The prompt of turn n is a prefix of the prompt of turn n+1 as long as no
+    exchange was removed (the template renders past answers after the generation
+    prompt, without their reasoning). The Mamba states cannot be rewound, so the
+    snapshot is taken at the end of the prefill (every prompt token but the last,
+    which the first decoding step consumes), before any reasoning is generated.
+    Snapshots share the MLX buffers; the Olala caches copy on write (vendor).
+    """
+
+    def __init__(self, model):
+        self.model = model
+        self.tokens = []
+        self.snapshot = None
+
+    def clear(self):
+        self.tokens, self.snapshot = [], None
+
+    def start(self, tokens):
+        """Return (cache, tokens still to process, reused tokens)."""
+        from mlx_lm.models.cache import make_prompt_cache
+
+        reused = len(self.tokens)
+        if self.snapshot is not None and 0 < reused < len(tokens) and tokens[:reused] == self.tokens:
+            return copy.deepcopy(self.snapshot), tokens[reused:], reused
+        return make_prompt_cache(self.model), tokens, 0
+
+    def progress(self, tokens, cache):
+        """prompt_progress_callback that snapshots the cache once only the last token is left."""
+        def callback(processed, total):
+            if processed == total - 1:
+                self.tokens, self.snapshot = list(tokens[:-1]), copy.deepcopy(cache)
+        return callback
+
+
+def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_history=False, prompt_cache=None):
     from mlx_lm import stream_generate
     from instructions import resolve
 
@@ -205,16 +242,25 @@ def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_histo
     if stream:
         print("Olala prépare sa réponse…", file=sys.stderr, flush=True)
     started = time.perf_counter()
+    extra, reused, remaining = {}, 0, tokens
+    if prompt_cache is not None:
+        cache, remaining, reused = prompt_cache.start(tokens)
+        # Snapshot as soon as the prefill is done: a failed turn still leaves its prompt reusable.
+        prompt_cache.snapshot = None
+        extra = {"prompt_cache": cache, "prompt_progress_callback": prompt_cache.progress(tokens, cache)}
     responses = stream_generate(
-        model, tokenizer, prompt=tokens, max_tokens=args.max_new_tokens,
+        model, tokenizer, prompt=remaining, max_tokens=args.max_new_tokens,
         sampler=make_vllm_sampler(getattr(args, "temperature", 0.0),
                                   getattr(args, "top_p", 1.0), getattr(args, "top_k", 0)),
+        **extra,
     )
     answer, last = collect_response(responses, stream)
     elapsed = time.perf_counter() - started
+    reuse = f", dont {reused} repris du tour précédent" if reused else ""
     print(f"Génération MLX : {last.generation_tokens} tokens en {elapsed:.1f} s "
           f"({last.generation_tokens / elapsed:.2f} tokens/s, préremplissage compris). "
-          f"Préremplissage : {len(tokens)} tokens à {last.prompt_tps:.0f} tokens/s. "
+          f"Préremplissage : {len(tokens)} tokens{reuse}, "
+          f"{len(remaining)} calculés à {last.prompt_tps:.0f} tokens/s. "
           f"Décodage : {last.generation_tps:.2f} tokens/s. "
           f"Pic mémoire : {last.peak_memory:.1f} Go.", file=sys.stderr)
     return answer, retained

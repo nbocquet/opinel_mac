@@ -91,6 +91,18 @@ réponse… » indique l'attente ; le préfixe « Olala > » apparaît au début
 réponse visible. Le raisonnement reste masqué, donc un délai peut précéder les premiers mots.
 
 - `/reset` efface l'historique sans recharger le modèle.
+- Avec `--backend mlx`, chaque tour reprend le préremplissage du précédent : le
+  prompt du tour n est un préfixe de celui du tour n+1, seuls la réponse
+  précédente et le nouveau message sont calculés. L'instantané est pris juste
+  avant la réflexion, que l'historique ne garde pas (les états Mamba ne se
+  rembobinent pas). Quand un ancien échange est retiré du contexte, le prompt
+  est recalculé en entier. La ligne de statistiques indique les tokens repris ;
+  `--no-prompt-cache` désactive la reprise. Sur la conversation Saint-Julien,
+  l'instantané restauré donne les mêmes logits qu'un préremplissage complet
+  coupé au même endroit (top-1 identique à 100 %, écart top-5 ≤ 0,005) ; tout
+  changement de découpage du préremplissage, avec ou sans cache, déplace déjà
+  les logits d'environ 0,1, ce qui suffit à faire diverger un rejeu greedy
+  (`scripts/check_prompt_cache.py`). Les 9 tours prennent 67 s au lieu de 85 s.
 - `/quit` ou Ctrl-D quitte la session.
 - Ctrl-C pendant une réponse l'interrompt et permet de saisir un nouveau message.
   À l'invite, Ctrl-C quitte la session.
@@ -243,6 +255,7 @@ sautées ; les résultats sont dans `.cache/diagnostic-n8/`.
 scripts/diagnose_n8.sh          # tout (≈ 30-60 min)
 scripts/diagnose_n8.sh rejeu    # rejeu seulement (≈ 5 min)
 scripts/diagnose_n8.sh parite   # parité seulement
+scripts/diagnose_n8.sh cache    # reprise du cache de prompt : rejeu avec et sans, puis logits
 ```
 
 Des conversations réelles ont montré des erreurs factuelles répétées, un refus
@@ -422,8 +435,6 @@ par mode depuis le terminal du Mac (médiane de 7,7 s par question en `low`,
 Les conseils suivants de l'[issue #1](../../issues/1) restent à faire ou à
 mesurer :
 
-- réutiliser le cache de prompt d'un tour à l'autre : le prompt du tour n est
-  un préfixe de celui du tour n+1 tant que rien n'est retiré (§8) ;
 - forcer le canal final (`<|channel_end|><|channel_start|>final<|content|>`)
   quand l'analyse épuise son budget, au lieu de jeter l'échange (§11) ;
 - charger N°4 directement : ses experts sont déjà au format affine 4 bits de

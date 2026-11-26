@@ -40,7 +40,7 @@ def replay(generate, user_messages):
 def run(args):
     import mlx.core as mx
     from opinel_mac import configure_environment, generate_turn, parse_args
-    from opinel_mlx import load_mlx_model, validate_provenance
+    from opinel_mlx import PromptCache, load_mlx_model, validate_provenance
 
     if args.output.exists():
         print(f"Déjà fait : {args.output}")
@@ -53,9 +53,10 @@ def run(args):
     provenance = validate_provenance(args.model_dir)
     model, tokenizer = load_mlx_model(args.model_dir, args.device)
     mx.random.seed(args.seed)
+    prompt_cache = None if args.no_prompt_cache else PromptCache(model)
 
     def generate(messages):
-        return generate_turn(model, tokenizer, messages, settings, trim_history=True)
+        return generate_turn(model, tokenizer, messages, settings, trim_history=True, prompt_cache=prompt_cache)
 
     turns = []
     for number, turn in enumerate(replay(generate, conversation["messages"]), 1):
@@ -65,6 +66,7 @@ def run(args):
     report = {"label": args.label, "format": provenance["format"], "model_dir": str(Path(args.model_dir).resolve()),
               "temperature": settings.temperature, "top_p": settings.top_p, "top_k": settings.top_k,
               "reasoning_effort": settings.reasoning_effort, "seed": args.seed, "device": args.device,
+              "prompt_cache": prompt_cache is not None,
               "conversation": str(args.conversation), "expected": conversation.get("attendu"), "turns": turns}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
@@ -83,7 +85,9 @@ def compare(args):
         for report in reports:
             turn = report["turns"][number] if number < len(report["turns"]) else None
             text = "(absent)" if turn is None else turn["answer"] or f"(échec : {turn['error']})"
-            print(f"\n--- {report['label']} ({report['format']}, T={report['temperature']}) ---\n{text.strip()}")
+            seconds = "" if turn is None or "seconds" not in turn else f", {turn['seconds']} s"
+            print(f"\n--- {report['label']} ({report['format']}, T={report['temperature']}{seconds}) ---"
+                  f"\n{text.strip()}")
         print()
     return 0
 
@@ -99,6 +103,8 @@ def main():
     replay_parser.add_argument("--seed", type=int, default=0)
     replay_parser.add_argument("--device", choices=["mps", "cpu"], default="mps")
     replay_parser.add_argument("--conversation", type=Path, default=DEFAULT_CONVERSATION)
+    replay_parser.add_argument("--no-prompt-cache", action="store_true",
+                               help="Recalculer tout le prompt à chaque tour")
     replay_parser.add_argument("--output", type=Path, required=True)
     comparison = commands.add_parser("compare")
     comparison.add_argument("reports", type=Path, nargs="+")
