@@ -646,6 +646,13 @@ drafter un peu plus d'un tiers de pas. Les réponses greedy divergent du décoda
 normal au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres
 noyaux sur un choix greedy.
 
+## Benchmarks multi-machines
+
+`benchmarks/` rassemble des mesures comparables d'une machine à l'autre :
+`scripts/bench_suite.py --machine <puce>-<pseudo>` lance la série (vérification,
+boucle greedy et échantillonnée, chat), `scripts/bench_summary.py` régénère
+`benchmarks/summary.md`. Protocole et pièges dans `benchmarks/README.md`.
+
 ## Pistes de l'issue #1 non traitées
 
 Les conseils suivants de l'[issue #1](../../issues/1) restent à faire ou à

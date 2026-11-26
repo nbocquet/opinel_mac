@@ -11,6 +11,7 @@ from the same snapshot (median of the repeats, synchronous):
 3. --variants: the same t(L) table in a fresh process for each OVH switch read
    at import (sequential Mamba-3 prefill kernel, MoE kernel version, full TPA
    cache, non-deterministic MoE sums).
+   The table also times opinel_verify (decode kernels) for L = 2, 4, 6.
 4. --rows: the fused decode itself over T independent sequences (its batching
    use): the best a fused verify of T tokens could do with these kernels. Each
    extra row reads its own 6 routed experts per layer.
@@ -73,12 +74,31 @@ def timed(mx, model, cache, following, length, repeats, fused=True):
     return 1000 * statistics.median(times)
 
 
+def timed_verify(mx, model, cache, following, length, repeats):
+    """opinel_verify.verify_block (decode kernels) on the same snapshot."""
+    from opinel_verify import verify_block
+
+    times = []
+    for repeat in range(repeats + 3):
+        work = copy.deepcopy(cache)
+        start = (repeat * length) % 48
+        mx.synchronize()
+        began = time.perf_counter()
+        mx.eval(verify_block(model, following[start:start + length], work))
+        if repeat >= 3:
+            times.append(time.perf_counter() - began)
+    return 1000 * statistics.median(times)
+
+
 def table(args):
     mx, model, cache, following = setup(args)
     rows = {"1 (décodage fusionné)": timed(mx, model, cache, following, 1, args.repeats),
             "1 (chemin générique, OLALA_FUSED=0)": timed(mx, model, cache, following, 1, args.repeats, fused=False)}
     for length in LENGTHS[1:]:
         rows[str(length)] = timed(mx, model, cache, following, length, args.repeats)
+    for length in LENGTHS[1:]:
+        rows[f"{length} (noyaux de décodage, opinel_verify)"] = timed_verify(mx, model, cache, following, length,
+                                                                            args.repeats)
     return rows
 
 
@@ -158,6 +178,7 @@ def main():
     parser.add_argument("--variants", action="store_true")
     parser.add_argument("--rows", action="store_true")
     parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--output", type=Path, help="Écrire aussi les résultats en JSON (table, --rows, --breakdown)")
     args = parser.parse_args()
 
     if args.json:
@@ -173,18 +194,30 @@ def main():
             print(f"{label:42}" + "  ".join(f"L={k.split()[0]}{'g' if 'générique' in k else ''}: {v:5.1f}"
                                             for k, v in results[label].items()), flush=True)
         return 0
+    def save(mode, results):
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(json.dumps({"mode": mode, "repeats": args.repeats, "milliseconds": results},
+                                              ensure_ascii=False, indent=2) + "\n")
+
     if args.rows:
-        for count, value in rows(args).items():
+        results = rows(args)
+        for count, value in results.items():
             print(f"décodage fusionné, {count} séquence(s) indépendante(s) : {value:6.2f} ms")
+        save("rows", {str(k): v for k, v in results.items()})
         return 0
     if args.breakdown:
-        for length, row in breakdown(args).items():
+        results = breakdown(args)
+        for length, row in results.items():
             print(f"\n{length}, chemin générique, barrière après chaque partie (ms, somme sur les 36 couches) :")
             for name, value in row.items():
                 print(f"  {name:48} {value:6.2f}")
+        save("breakdown", results)
         return 0
-    for label, value in table(args).items():
-        print(f"L = {label:40} {value:6.2f} ms")
+    results = table(args)
+    for label, value in results.items():
+        print(f"L = {label:48} {value:6.2f} ms")
+    save("table", results)
     return 0
 
 
