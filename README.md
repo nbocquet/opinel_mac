@@ -214,6 +214,19 @@ pas une validation complète de la parité numérique ou de la qualité.
 
 ### Diagnostic de la qualité des réponses
 
+**N°8 direct ou modèle ?** `scripts/diagnose_n8.sh` sépare les causes. Il rejoue
+la conversation réelle de `evaluation/conversation_saint_julien.json` en greedy
+avec les poids BF16, puis avec N°8 direct, puis avec N°8 échantillonné à
+T = 0,8, et affiche les réponses tour par tour. Il mesure ensuite la parité
+des deux exports contre la référence FP32. Les étapes déjà faites sont
+sautées ; les résultats sont dans `.cache/diagnostic-n8/`.
+
+```sh
+scripts/diagnose_n8.sh          # tout (≈ 30-60 min)
+scripts/diagnose_n8.sh rejeu    # rejeu seulement (≈ 5 min)
+scripts/diagnose_n8.sh parite   # parité seulement
+```
+
 Des conversations réelles ont montré des erreurs factuelles répétées, un refus
 de prendre en compte des corrections et une confusion entre « tutoie-moi » et
 une demande de tutoriel. Les tests logiciels et la vitesse de décodage ne

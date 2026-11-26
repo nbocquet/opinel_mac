@@ -1,0 +1,15 @@
+{
+  "description": "Conversation réelle du 26 novembre 2026 (poids mlx-n8, chat échantillonné) : erreurs géographiques sur Saint-Julien-en-Genevois et corrections ignorées. Rejouée telle quelle pour séparer l'effet des poids de celui de l'échantillonnage.",
+  "attendu": "Saint-Julien-en-Genevois est une commune française de Haute-Savoie, sous-préfecture, à environ 10 km au sud de Genève, à la frontière suisse.",
+  "messages": [
+    "Salut le couteau, tu es bien aiguisé aujourd'hui?",
+    "ca va bien, tu crois qu'il va neiger cet hiver ici?",
+    "meme avec le changement climatique? ou tu bullshit?",
+    "j'habite a saint julien vers geneve tu connais?",
+    "non c'est pas lui, un autre en france",
+    "je te parle de saint julien, reste sur ca",
+    "non c'est pas a coté de geneve ca, cherche un st julien pres de geneve",
+    "et saint julien en genevois?",
+    "tu comprends pas grande chose au conversation"
+  ]
+}
