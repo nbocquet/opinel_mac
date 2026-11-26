@@ -487,7 +487,20 @@ tokens, tête INT8 de la cible, couches du drafter en 8 bits), décodage normal
 La vérification par le chemin de préremplissage d'OVH coûte presque deux pas de
 décodage fusionné (saut fixe d'environ 8 ms dès 2 tokens, `scripts/bench_verify.py`,
 signalé dans l'issue #1) : le gain reste marginal sans un chemin de vérification
-fusionné pour les petits blocs. Les réponses greedy divergent du décodage normal
+fusionné pour les petits blocs.
+
+**D'où vient le saut** (`scripts/profile_verify.py`). Un seul token passé par le
+chemin générique couche par couche (`OLALA_FUSED=0`) coûte déjà 25 ms, contre
+14,7 ms par le décodage fusionné, et 4 tokens 26,7 ms : c'est le chemin, pas le
+nombre de tokens. Avec une barrière après chaque partie, à 4 tokens : MoE
+17,7 ms, Mamba-3 10,1 ms, attention 8,5 ms, le reste 4,5 ms (somme sur les 36
+couches, barrières comprises). Parmi les réglages d'OVH, seul
+`OLALA_TPA_CACHE=full` aide : 22,5 ms au lieu de 26,8 à 4 tokens, décodage
+fusionné inchangé (14,6 ms) ; `OLALA_M3_CHUNKED=0`, `OLALA_MOE_V3=0` et
+l'absence de `OLALA_DETERMINISTIC` ne changent rien. Avec ce cache complet, la
+boucle greedy donne ×1,15 à K = 3 (88,5 tokens/s, 2,73 tokens par passe,
+5,5 + 25,2 ms) et ×0,99 à K = 5 ; le cache complet reste à mesurer sur les
+longs contextes, où le factorisé est choisi sur M5. Les réponses greedy divergent du décodage normal
 au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres noyaux
 sur un choix greedy.
 
@@ -506,7 +519,7 @@ mesurer :
   reproduit le fork, à valider par un test d'aiguille (§12) ;
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
-- Télégraphe (§5) : drafter et boucle greedy faits, gain ×1,04 seulement (voir plus haut) ;
+- Télégraphe (§5) : drafter et boucle greedy faits, gain ×1,04, ×1,15 avec `OLALA_TPA_CACHE=full` (voir plus haut) ;
   restent l'échantillonnage par rejet, l'intégration au chat et surtout une vérification
   fusionnée pour les petits blocs ;
 
