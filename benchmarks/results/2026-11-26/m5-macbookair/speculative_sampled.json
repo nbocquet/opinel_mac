@@ -1,0 +1,58 @@
+{
+  "plain_tokens_per_second": 55.700836499206794,
+  "interleaved": true,
+  "sampling": {
+    "temperature": 0.8,
+    "top_p": 0.9,
+    "top_k": 40
+  },
+  "speculative": {
+    "2": {
+      "verify_path": "decode",
+      "verify_calibration_ms": {
+        "noyaux de décodage": 21.899624989600852,
+        "chemin de préremplissage": 30.047937500057742
+      },
+      "tokens_per_second": 65.45227130283595,
+      "speedup": 1.1750680136332965,
+      "tokens_per_step": 2.2669657879977567,
+      "draft_ms": 6.354245760686229,
+      "verify_ms": 28.122562167495364,
+      "identical_prefix_median": 0.046875
+    },
+    "3": {
+      "verify_path": "decode",
+      "verify_calibration_ms": {
+        "noyaux de décodage": 29.31862449622713,
+        "chemin de préremplissage": 37.029188009910285
+      },
+      "tokens_per_second": 66.93891127245195,
+      "speedup": 1.2017577379363986,
+      "tokens_per_step": 2.65359477124183,
+      "draft_ms": 6.688677315148251,
+      "verify_ms": 32.83157259784335,
+      "identical_prefix_median": 0.087890625
+    },
+    "4": {
+      "verify_path": "decode",
+      "verify_calibration_ms": {
+        "noyaux de décodage": 31.39404149260372,
+        "chemin de préremplissage": 37.907958030700684
+      },
+      "tokens_per_second": 62.63131785318464,
+      "speedup": 1.1244232903769145,
+      "tokens_per_step": 2.832757429163787,
+      "draft_ms": 7.307845346662444,
+      "verify_ms": 37.70683859186131,
+      "identical_prefix_median": 0.037109375
+    }
+  },
+  "meta": {
+    "machine": "m5-macbookair",
+    "date": "2026-11-26",
+    "commit": "c90fb6e",
+    "quick": false,
+    "power": "secteur",
+    "olala": {}
+  }
+}
