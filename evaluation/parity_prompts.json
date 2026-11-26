@@ -1,0 +1,27 @@
+{
+  "description": "Prompts de parité numérique (issue #1, §3 et §6) : s'ajoutent aux cas des suites de fiabilité. Les documents longs sont tronqués à un nombre de tokens fixé, pour couvrir le préremplissage par blocs de 2048 tokens et le noyau d'attention au-delà de 1024 clés.",
+  "prompts": [
+    "Écris une fonction Python qui renvoie les n premiers nombres premiers, avec une docstring.",
+    "Explain the difference between a mutex and a semaphore in three short paragraphs.",
+    "Traduis en anglais : « Le train de 7 h 42 a été supprimé à cause d'un incident technique. »",
+    "Un réservoir de 1200 litres se vide à 35 litres par minute. Combien de temps faut-il pour le vider ? Détaille le calcul.",
+    "Donne une recette de pâte brisée pour une tarte de 28 cm, sous forme de liste.",
+    "Résume en cinq phrases le fonctionnement d'une pompe à chaleur.",
+    "Quelle est la dérivée de x^3 · ln(x) ? Justifie chaque étape.",
+    "Write a haiku about autumn rain, then explain its imagery.",
+    "Compare les avantages du train et de l'avion pour un trajet Paris–Marseille.",
+    "Écris une requête SQL qui renvoie les dix clients ayant le plus dépensé en 2025, à partir des tables clients(id, nom) et commandes(id, client_id, montant, date).",
+    "Explique à un enfant de huit ans pourquoi le ciel est bleu.",
+    "Liste les étapes pour changer une roue de voiture en sécurité.",
+    "¿Cuáles son las principales diferencias entre el español de España y el de México?",
+    "Rédige un courriel poli pour décaler une réunion de mardi à jeudi.",
+    "Quels sont les risques d'une injection SQL et comment s'en protéger ?",
+    "Calcule 15 % de 2340, puis ajoute la TVA à 20 % sur le résultat."
+  ],
+  "long_documents": [
+    {"id": "long_readme", "path": "README.md", "tokens": 3000,
+     "question": "Résume ce document en cinq points, puis indique la limite principale qu'il mentionne."},
+    {"id": "long_code", "path": "opinel_mac.py", "tokens": 4500,
+     "question": "Explique ce que fait ce programme et décris le rôle de la fonction load_model."}
+  ]
+}

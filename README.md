@@ -283,6 +283,14 @@ les deux chemins MLX préfèrent « 7 ». Les kernels Metal fusionnés OVH reste
 proches de leur chemin de référence. Sur ces entrées, rien n'indique un bug
 numérique majeur expliquant à lui seul les erreurs observées en conversation.
 
+Ces premières mesures ne se comparent pas aux repères de l'équipe Opinel
+(issue #1, §6) : l'écart était moyenné sur tout le vocabulaire, où la queue
+domine ; les deux « références » étaient en BF16 (la ligne « plancher bf16 »,
+pas une référence FP32) ; et le texte forcé ne couvrait que 25 positions
+proches du protocole. `scripts/check_logit_parity.py` suit désormais la
+méthode de l'équipe (voir `evaluation/README.md`) ; les nouvelles mesures
+restent à faire depuis le terminal du Mac.
+
 **Limites.** Une seule exécution déterministe, sur 30 cas ciblés : ce n'est
 pas une mesure de fiabilité générale. Les réponses libres ont été jugées par
 un assistant (`kind=assistant`), sans validation humaine indépendante. Le preset

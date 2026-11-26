@@ -132,18 +132,46 @@ retrouver sur les cas témoins. Ces consignes peuvent corriger un comportement
 ## Vérifier les distributions de tokens
 
 Des réponses libres différentes ne suffisent pas à prouver un bug numérique.
-Le contrôle suivant fixe les prompts et les tokens suivants, sans échantillonnage :
+`scripts/check_logit_parity.py` applique la méthode de l'équipe Opinel
+(issue #1, §3 et §6) :
+
+1. `generate` : le backend testé continue en greedy, sur 256 tokens, 64 prompts
+   variés. Ce sont les 44 cas des deux suites de fiabilité, les 16 prompts de
+   `parity_prompts.json` et deux documents longs de 3000 et 4500 tokens, qui
+   couvrent le préremplissage MLX par blocs de 2048 tokens et le noyau
+   d'attention au-delà de 1024 clés. Chaque pas enregistre le top-64 des
+   log-probabilités du vrai chemin de décodage.
+2. `capture` : PyTorch sur CPU relit ces continuations en teacher forcing,
+   en un seul préremplissage. Par défaut, la référence est en FP32, avec les
+   experts routés gardés en INT8 et déquantifiés expert par expert (environ
+   11 Go au lieu de 27). `--precision bf16` donne la ligne « plancher bf16 ».
+3. `compare` : accord top-1, écart moyen |Δ log p| sur le top-5 de la
+   référence, et erreurs franches (top-1 de la référence avec p > 0,5 mais
+   token généré différent). Les résultats sont ventilés entre prompts courts
+   et longs.
+
+Repères de l'équipe sur N°8 (GPU, 64 prompts × 256 tokens) : accord top-1 de
+97,7 à 97,9 %, écart top-5 de 0,098 à 0,104 ; plancher bf16 sur CPU : 97,9 à
+98,2 % et 0,089 à 0,091. Les commandes forcent `OLALA_DETERMINISTIC=1` et
+enregistrent `OLALA_TPA_CACHE`.
 
 ```sh
-.venv/bin/python scripts/check_logit_parity.py capture --backend torch --device cpu --output .cache/parity-torch.npz
-.venv-mlx/bin/python scripts/check_logit_parity.py capture --backend mlx --device mps --output .cache/parity-mlx.npz
-.venv-mlx/bin/python scripts/check_logit_parity.py capture --backend mlx --device mps --reference --output .cache/parity-mlx-reference.npz
-.venv/bin/python scripts/check_logit_parity.py compare .cache/parity-mlx-reference.npz .cache/parity-mlx.npz
-.venv/bin/python scripts/check_logit_parity.py compare .cache/parity-torch.npz .cache/parity-mlx-reference.npz
+G=.cache/parity
+# Backend testé : N°8 direct, puis Q8, et les deux dispositions du cache d'attention.
+.venv-mlx/bin/python scripts/check_logit_parity.py generate --backend mlx --device mps \
+  --model-dir models/opinel-n8-mlx-n8 --output $G/mlx-n8.npz
+OLALA_TPA_CACHE=full .venv-mlx/bin/python scripts/check_logit_parity.py generate --backend mlx --device mps \
+  --model-dir models/opinel-n8-mlx-n8 --output $G/mlx-n8-full.npz
+OLALA_TPA_CACHE=factored .venv-mlx/bin/python scripts/check_logit_parity.py generate --backend mlx --device mps \
+  --model-dir models/opinel-n8-mlx-n8 --output $G/mlx-n8-factored.npz
+.venv-mlx/bin/python scripts/check_logit_parity.py generate --backend mlx --device mps \
+  --model-dir models/opinel-n8-mlx-q8 --output $G/mlx-q8.npz
+# Référence FP32 (CPU, lente : un préremplissage par prompt), puis comparaison.
+.venv/bin/python scripts/check_logit_parity.py capture $G/mlx-n8.npz --output $G/mlx-n8-ref-fp32.npz
+.venv/bin/python scripts/check_logit_parity.py compare $G/mlx-n8.npz $G/mlx-n8-ref-fp32.npz
 ```
 
-Les captures vérifient les entrées et la provenance commune, puis mesurent
-l'accord top-1, la divergence KL et l'écart de log-probabilité. Elles incluent
-le préremplissage et plusieurs pas avec cache. Le Q8 MLX est refusé pour isoler
-les kernels de la requantification. Aucun seuil universel ni verdict de
-fiabilité factuelle n'est déduit de ces métriques.
+Chaque `capture` est liée à l'empreinte de sa génération. Pour le plancher
+bf16, générer avec `--backend torch --device cpu`, puis capturer cette
+génération avec la référence FP32. `--limit 4` permet un essai rapide. Aucun
+verdict de fiabilité factuelle n'est déduit de ces métriques.

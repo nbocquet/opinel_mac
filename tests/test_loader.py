@@ -79,3 +79,39 @@ class DequantizationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(torch is None, "PyTorch non installé")
+class Int8ExpertTests(unittest.TestCase):
+    def test_int8_experts_match_dequantized_fp32_mixture_and_leave_no_parameters(self):
+        from opinel_mac import install_int8_experts
+
+        class TorchMoEMLP(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.num_experts, self.input_size = 3, 4
+                self.activation = lambda x: torch.relu(x).square()
+                self.experts = torch.nn.Module()
+                self.experts.weight = torch.nn.Parameter(torch.zeros(3, 5, 4))
+                self.output_experts = torch.nn.Module()
+                self.output_experts.weight = torch.nn.Parameter(torch.zeros(3, 4, 5))
+
+        model = torch.nn.Module()
+        model.mlp = torch.nn.Module()
+        model.mlp.experts = TorchMoEMLP()
+        torch.manual_seed(0)
+        q_in, q_out = torch.randint(-127, 128, (3, 5, 4), dtype=torch.int8), torch.randint(-127, 128, (3, 4, 5), dtype=torch.int8)
+        s_in, s_out = torch.rand(3, 5) / 50, torch.rand(3, 4) / 50
+        install_int8_experts(model, {"mlp.experts.experts.weight": (q_in, s_in),
+                                     "mlp.experts.output_experts.weight": (q_out, s_out)})
+        self.assertEqual(list(model.parameters()), [])
+        self.assertEqual(model.state_dict(), {})
+        x = torch.randn(2, 4)
+        idx, p = torch.tensor([[0, 2], [2, 1]]), torch.tensor([[0.7, 0.3], [0.6, 0.4]])
+        w_in, w_out = q_in.float() * s_in[..., None], q_out.float() * s_out[..., None]
+        expected = torch.stack([
+            sum(p[t, k] * (w_out[idx[t, k]] @ torch.relu(w_in[idx[t, k]] @ x[t]).square()) for k in range(2))
+            for t in range(2)])
+        torch.testing.assert_close(model.mlp.experts(x, p, idx), expected)
+        with self.assertRaisesRegex(ValueError, "TorchMoEMLP"):
+            install_int8_experts(torch.nn.Module(), {"other.weight": (q_in, s_in)})

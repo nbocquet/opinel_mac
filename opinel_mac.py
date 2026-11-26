@@ -267,6 +267,61 @@ def precise_geodesic(module, residual, update):
     return (x * torch.cos(theta) + tangent * (radius * torch.sin(theta) / tangent_norm)).to(dtype)
 
 
+EXPERT_WEIGHTS = (".mlp.experts.experts.weight", ".mlp.experts.output_experts.weight")
+
+
+def int8_moe_forward(self, x, expert_p, expert_idxs):
+    """TorchMoEMLP.forward with INT8 experts dequantized per expert (FP32 reference).
+
+    Same grouping and FP32 accumulation as modeling_olala.py; only the weight
+    source changes, so 27 Go of FP32 experts never need to be materialized.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    x_shape = x.shape
+    x = x.reshape(-1, x_shape[-1])
+    top_k = expert_idxs.shape[-1]
+    flat_idx = expert_idxs.reshape(-1)
+    order = torch.argsort(flat_idx, stable=True)
+    token_of = order // top_k
+    gate_of = expert_p.reshape(-1)[order].float()
+    counts = torch.bincount(flat_idx, minlength=self.num_experts).tolist()
+    out = torch.zeros(x.shape[0], self.input_size, device=x.device, dtype=torch.float32)
+    start = 0
+    for e, n in enumerate(counts):
+        if n == 0:
+            continue
+        tok = token_of[start:start + n]
+        w_in = (self.experts.q[e].float() * self.experts.s[e][:, None]).to(x.dtype)
+        w_out = (self.output_experts.q[e].float() * self.output_experts.s[e][:, None]).to(x.dtype)
+        h = self.activation(F.linear(x[tok], w_in))
+        out.index_add_(0, tok, F.linear(h, w_out).float() * gate_of[start:start + n, None])
+        start += n
+    return out.to(x.dtype).view(*x_shape[:-1], self.input_size)
+
+
+def install_int8_experts(model, experts):
+    """Replace each TorchMoEMLP's expert parameters with non-persistent INT8 buffers."""
+    import torch
+
+    installed = set()
+    for path, module in model.named_modules():
+        if type(module).__name__ != "TorchMoEMLP":
+            continue
+        for child in ("experts", "output_experts"):
+            key = f"{path}.{child}.weight"
+            q, scale = experts[key]
+            holder = torch.nn.Module()
+            holder.register_buffer("q", q, persistent=False)
+            holder.register_buffer("s", scale.float(), persistent=False)
+            setattr(module, child, holder)
+            installed.add(key)
+        module.forward = MethodType(int8_moe_forward, module)
+    if installed != set(experts):
+        raise ValueError("Experts INT8 sans module TorchMoEMLP correspondant (OLALA_TORCH_MOE=1 ?).")
+
+
 def snapshot(offline=False):
     from huggingface_hub import snapshot_download
 
@@ -276,7 +331,13 @@ def snapshot(offline=False):
     ))
 
 
-def load_model(folder, device, *, context_length=2048, unquantized_reference=False, architecture_folder=None):
+def load_model(folder, device, *, context_length=2048, unquantized_reference=False, architecture_folder=None,
+               reference_fp32=False):
+    """Load N8 for inference (BF16) or, with reference_fp32, as an FP32 reference.
+
+    The FP32 reference keeps the routed experts in INT8 (5,4 Go) and dequantizes
+    them per expert; everything else is FP32, about 11 Go (issue #1, §6).
+    """
     import torch
     from safetensors import safe_open
     from transformers import AutoConfig, AutoModelForCausalLM
@@ -302,7 +363,10 @@ def load_model(folder, device, *, context_length=2048, unquantized_reference=Fal
         model = AutoModelForCausalLM.from_config(
             config, trust_remote_code=True, attn_implementation="eager"
         )
-    state = {}
+    if reference_fp32 and unquantized_reference:
+        raise ValueError("La référence FP32 se construit depuis les poids N8.")
+    dtype = torch.float32 if reference_fp32 else torch.bfloat16
+    state, experts = {}, {}
     with safe_open(folder / "model.safetensors", framework="pt", device="cpu") as source:
         keys = set(source.keys())
         for number, name in enumerate(sorted(keys), 1):
@@ -315,13 +379,20 @@ def load_model(folder, device, *, context_length=2048, unquantized_reference=Fal
                 scale_name = name.removesuffix(".weight") + ".weight_scale"
                 if scale_name not in keys:
                     raise ValueError(f"Échelle manquante : {scale_name}")
-                tensor = dequantize(tensor, source.get_tensor(scale_name), torch.bfloat16)
+                if reference_fp32 and name.endswith(EXPERT_WEIGHTS):
+                    experts[hf_parameter_name(name)] = (tensor.to(device), source.get_tensor(scale_name).to(device))
+                    continue
+                tensor = dequantize(tensor, source.get_tensor(scale_name), dtype)
+            elif reference_fp32 and tensor.is_floating_point():
+                tensor = tensor.float()
             target = hf_parameter_name(name)
             if target in state:
                 raise ValueError(f"Paramètre dupliqué : {target}")
             state[target] = tensor.to(device)
             if number % 100 == 0:
                 print(f"Chargement : {number}/{len(keys)} tenseurs", file=sys.stderr)
+    if reference_fp32:
+        install_int8_experts(model, experts)
     # Refuse missing/unexpected keys rather than running with random parameters.
     model.load_state_dict(state, strict=True, assign=True)
     # Mirror the supplied model's from_pretrained post-load hook. In particular,
