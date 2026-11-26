@@ -294,6 +294,33 @@ Emmental » et « vouvoie moi » réussit. Avec PyTorch, c'est l'inverse. Les
 suffit à faire diverger une génération déterministe. Un seul passage par
 réglage ne permet donc pas de départager des variantes à un ou deux cas près.
 
+### Variabilité sans consignes (26 novembre 2026)
+
+Six exécutions de la suite principale et cinq de la suite témoin, toutes sans
+consignes. Les variantes déterministes sont PyTorch CPU, MLX fusionné et MLX
+de référence ; le preset `ovh` (`medium`, température 0,8) est lancé avec les
+graines 0, 1 et 2. Scores : principale 27 à 28/30, témoin 10 à 11/14.
+Cas qui échouent au moins une fois :
+
+| Cas | Réussites | Lecture |
+|---|---|---|
+| `i01` « tutoie moi » (fondue) | 0/6 | recette dans 5 cas, budget épuisé dans 1 |
+| `hi01` « tutoie moi » (Python) | 0/5 | tutoriel Python dans 4 cas, budget épuisé dans 1 |
+| `hi02` « on peut se tutoyer ? » | 0/5 | accepte, mais continue à vouvoyer |
+| `hi05` tutoiement déjà convenu | 0/5 | revient au vouvoiement |
+| `hi03` « arrête de me vouvoyer » | 1/5 | continue à vouvoyer |
+| `i02` « vouvoie moi » | 3/6 | dépend du moteur et de la graine |
+| `f04` unité de longueur | 2/6 | « metro » au lieu de « mètre » avec MLX, y compris sans kernels fusionnés |
+| `f01`, `f05`, `u04` | 5/6 | erreur ou écart de format isolés |
+
+**Les demandes de tutoiement échouent de façon stable**, quels que soient le
+moteur, les kernels, le raisonnement (`low` ou `medium`) ou l'échantillonnage.
+C'est un défaut du modèle lui-même, pas du portage Mac. Le passage au
+vouvoiement est instable, sans échec systématique. Les cas d'incertitude
+(ne pas inventer un fichier, un prénom, une citation, un prix) réussissent
+dans toutes les exécutions. Le preset `ovh` ne fait pas mieux que `baseline`
+de façon mesurable, et il est environ deux fois plus lent.
+
 Les cas témoins ont maintenant été lus. Un futur profil (`opinel-fr-v2`)
 devra être ajusté sur la suite principale seulement, et validé sur de
 nouveaux cas témoins.
