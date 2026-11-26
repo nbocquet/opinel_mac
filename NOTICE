@@ -1,0 +1,15 @@
+Opinel sur Mac Apple Silicon
+Copyright 2026 Nicolas Bocquet
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This project adapts parts of the Olala v1.0 mini 7A1B code
+(modeling_olala.py), Copyright 2026 OVH LLM SAS (trading as OVHai LLM),
+licensed under the Apache License, Version 2.0.
+
+vendor/ovh_olala/ contains unmodified sources of the OVHai mlx-engine
+Olala module, licensed under the MIT License; its license and copyright
+notice are kept in that directory.
+
+Model weights (Opinel N°8, Télégraphe) are not part of this repository.
+They are downloaded separately and keep their own LICENSE and NOTICE.

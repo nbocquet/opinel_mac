@@ -154,6 +154,8 @@ Tests unitaires :
 
 ## Licences
 
-Le modèle Opinel N°8 et Télégraphe sont sous licence Apache 2.0 ; leurs
-fichiers `LICENSE` et `NOTICE` sont conservés avec les poids. Le module Olala
-d'OVH, sous licence MIT, est dans `vendor/ovh_olala/`.
+Le code de ce dépôt est sous licence [Apache 2.0](LICENSE) ; voir aussi
+[`NOTICE`](NOTICE). Le module Olala d'OVH, sous licence MIT, est dans
+`vendor/ovh_olala/` avec sa licence. Les poids d'Opinel N°8 et de Télégraphe
+(Apache 2.0) ne sont pas dans le dépôt : téléchargés à part, ils gardent leurs
+fichiers `LICENSE` et `NOTICE`.
