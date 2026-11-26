@@ -1,4 +1,5 @@
-"""Greedy speculative decoding with Télégraphe against plain greedy decoding, on the MLX target.
+"""Speculative decoding with Télégraphe against plain decoding, on the MLX target (greedy, or sampled
+with --temperature / --top-p / --top-k: rejection sampling, exact for the target law).
 
 For each prompt, the plain greedy decode (mlx-lm, fused single-token path) and
 the speculative one (verify K + 1 tokens, roll back to the accepted prefix) each
@@ -46,6 +47,11 @@ def main():
     parser.add_argument("--layers-per-submit", type=int, nargs="+",
                         help="Envoi au GPU toutes les N couches pendant la construction (0 : à la fin) ; "
                              "plusieurs valeurs sont mesurées en alternance")
+    parser.add_argument("--temperature", type=float, default=0.0,
+                        help="0 : greedy ; sinon échantillonnage (réglages du chat : 0.8, --top-p 0.9, --top-k 40)")
+    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--top-k", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--rollback-check", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -70,7 +76,10 @@ def main():
                          quantize_bits=None if args.bf16_layers else 8)
     eos = set(tokenizer.eos_token_ids)
     prompts = json.loads(args.prompts.read_text())["prompts"][:args.limit]
-    greedy = lambda logprobs: mx.argmax(logprobs, axis=-1)  # noqa: E731
+    from opinel_mlx import make_vllm_sampler
+    sampler = make_vllm_sampler(args.temperature, args.top_p, args.top_k)
+    mx.random.seed(args.seed)
+    sampling = {"temperature": args.temperature, "top_p": args.top_p, "top_k": args.top_k}
 
     def encode(text):
         rendered = tokenizer.apply_chat_template([{"role": "user", "content": text}], tokenize=False,
@@ -79,7 +88,7 @@ def main():
 
     def plain(prompt):
         tokens, first = [], None
-        for token, _ in generate_step(mx.array(prompt), model, max_tokens=args.tokens, sampler=greedy):
+        for token, _ in generate_step(mx.array(prompt), model, max_tokens=args.tokens, sampler=sampler):
             if first is None:
                 first = time.perf_counter()
             tokens.append(int(token))
@@ -89,7 +98,7 @@ def main():
 
     def speculative(speculator, prompt):
         tokens, first, stats = [], None, {}
-        for token in speculator.generate(prompt, args.tokens, eos=eos, stats=stats):
+        for token in speculator.generate(prompt, args.tokens, eos=eos, stats=stats, seed=args.seed, **sampling):
             if first is None:
                 first = time.perf_counter()
             tokens.append(token)
@@ -121,7 +130,7 @@ def main():
     print(f"Décodage normal : {plain_rate:.1f} tokens/s ({len(encoded)} prompts, jusqu'à {args.tokens} tokens, "
           f"mesures alternées).", flush=True)
 
-    report = {"plain_tokens_per_second": plain_rate, "interleaved": True, "speculative": {}}
+    report = {"plain_tokens_per_second": plain_rate, "interleaved": True, "sampling": sampling, "speculative": {}}
     for variant in variants:
         steps, submit = variant
         label = f"K = {steps}" + ("" if submit is None else f", envoi toutes les {submit or '—'} couches")
@@ -139,8 +148,9 @@ def main():
                "identical_prefix_median": statistics.median(agreements)}
         report["speculative"][str(steps) if submit is None else f"{steps}/{submit}"] = row
         print(f"{label} : {rate:.1f} tokens/s (×{row['speedup']:.2f}), {row['tokens_per_step']:.2f} tokens par "
-              f"passe, drafter {row['draft_ms']:.1f} ms + vérification {row['verify_ms']:.1f} ms par passe, "
-              f"début identique au greedy normal : {100 * row['identical_prefix_median']:.0f} % (médiane)",
+              f"passe, drafter {row['draft_ms']:.1f} ms + vérification {row['verify_ms']:.1f} ms par passe"
+              + ("" if args.temperature > 0 else
+                 f", début identique au greedy normal : {100 * row['identical_prefix_median']:.0f} % (médiane)"),
               flush=True)
 
     if args.rollback_check:

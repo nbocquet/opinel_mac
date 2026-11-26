@@ -89,6 +89,31 @@ def prepare_mlx_turn(tokenizer, messages, reasoning_effort, trim_history=False,
         retained = retained[2:]
 
 
+def vllm_law(logprobs, temperature, top_p, top_k):
+    """The law vLLM samples from: temperature, then top-k, then top-p on the renormalized law.
+
+    Returns (ids, logits) of shape (..., k), sorted by decreasing probability; the
+    tokens cut by top-p get -inf. softmax(logits) over ids is the sampling law.
+    """
+    import mlx.core as mx
+
+    x = logprobs / temperature
+    if 0 < top_k < x.shape[-1]:
+        index = mx.argpartition(-x, kth=top_k - 1, axis=-1)[..., :top_k]
+    else:
+        index = mx.broadcast_to(mx.arange(x.shape[-1]), x.shape)
+    values = mx.take_along_axis(x, index, axis=-1)
+    order = mx.argsort(-values, axis=-1)
+    values = mx.take_along_axis(values, order, axis=-1)
+    index = mx.take_along_axis(index, order, axis=-1)
+    if top_p < 1:
+        probabilities = mx.softmax(values, axis=-1)
+        # Keep a token while the mass before it is below top_p: the first always stays.
+        keep = mx.cumsum(probabilities, axis=-1) - probabilities < top_p
+        values = mx.where(keep, values, -mx.inf)
+    return index, values
+
+
 def make_vllm_sampler(temperature, top_p, top_k):
     """Sample as vLLM does: temperature, then top-k, then top-p on the renormalized law.
 
@@ -101,20 +126,7 @@ def make_vllm_sampler(temperature, top_p, top_k):
         return lambda logprobs: mx.argmax(logprobs, axis=-1)
 
     def sampler(logprobs):
-        x = logprobs / temperature
-        if 0 < top_k < x.shape[-1]:
-            index = mx.argpartition(-x, kth=top_k - 1, axis=-1)[..., :top_k]
-        else:
-            index = mx.broadcast_to(mx.arange(x.shape[-1]), x.shape)
-        values = mx.take_along_axis(x, index, axis=-1)
-        order = mx.argsort(-values, axis=-1)
-        values = mx.take_along_axis(values, order, axis=-1)
-        index = mx.take_along_axis(index, order, axis=-1)
-        if top_p < 1:
-            probabilities = mx.softmax(values, axis=-1)
-            # Keep a token while the mass before it is below top_p: the first always stays.
-            keep = mx.cumsum(probabilities, axis=-1) - probabilities < top_p
-            values = mx.where(keep, values, -mx.inf)
+        index, values = vllm_law(logprobs, temperature, top_p, top_k)
         choice = mx.random.categorical(values)
         return mx.take_along_axis(index, choice[..., None], axis=-1).squeeze(-1)
 

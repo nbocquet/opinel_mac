@@ -20,6 +20,7 @@ import os
 import time
 
 import mlx.core as mx
+import numpy as np
 
 from opinel_telegraphe import capture_aux
 from opinel_verify import verify_block
@@ -104,6 +105,31 @@ class VerifyRecorder:
                     shift_cache[slot] = values[:, keep - 1:keep]
 
 
+def rejection_step(drafts, candidate_ids, log_q, law_ids, law_probs, rng):
+    """Speculative sampling of one verified block (Leviathan et al., Chen et al.), exact for the target law.
+
+    drafts (K,): the drafted tokens; candidate_ids / log_q (K, k): the draft law q_i over the
+    candidates of step i (the row of the walk, given the chosen predecessor); law_ids / law_probs
+    (K + 1, m): the target law p_j at each verified position (vllm_law, zero outside law_ids).
+    Draft i is kept with probability min(1, p_i(x) / q_i(x)); at the first rejection the next
+    token is drawn from norm(max(p_i - q_i, 0)); when all K are kept, from p_K.
+    Returns (accepted, next token).
+    """
+    for i, token in enumerate(drafts):
+        p_row = dict(zip(law_ids[i].tolist(), law_probs[i].tolist()))
+        q_row = dict(zip(candidate_ids[i].tolist(), np.exp(log_q[i]).tolist()))
+        p_x, q_x = p_row.get(int(token), 0.0), q_row.get(int(token), 0.0)
+        if q_x > 0 and rng.random() * q_x < p_x:
+            continue
+        ids = law_ids[i]
+        residual = np.maximum(law_probs[i] - np.array([q_row.get(int(t), 0.0) for t in ids]), 0.0)
+        if residual.sum() <= 0:  # p == q on the support: any draw from p is exact
+            residual = law_probs[i]
+        return i, int(ids[rng.choice(len(ids), p=residual / residual.sum())])
+    last = len(drafts)
+    return last, int(law_ids[last][rng.choice(law_ids.shape[1], p=law_probs[last] / law_probs[last].sum())])
+
+
 class Speculator:
     """Greedy speculative generation of the MLX target with a Télégraphe drafter."""
 
@@ -132,16 +158,35 @@ class Speculator:
             keys = k if keys is None else [mx.concatenate([a, b], axis=1) for a, b in zip(keys, k)]
             values = v if values is None else [mx.concatenate([a, b], axis=1) for a, b in zip(values, v)]
             mx.eval(logits, keys, values)
-        return int(mx.argmax(logits[-1])), (keys, values)
+        return int(mx.argmax(logits[-1])), (keys, values), logits[-1]
 
-    def generate(self, prompt, max_tokens, eos=(), cache=None, stats=None):
-        """Yield the target's greedy tokens, several per verify forward."""
+    def generate(self, prompt, max_tokens, eos=(), cache=None, stats=None, temperature=0.0, top_p=1.0, top_k=0,
+                 seed=None):
+        """Yield the target's tokens, several per verify forward: greedy at temperature 0, otherwise
+        sampled from the vLLM-order law (temperature, top-k, top-p) by rejection, which keeps that
+        law exact whatever the drafter proposes."""
+        from opinel_mlx import vllm_law
+
+        sampling = temperature > 0
+        rng = np.random.default_rng(seed)
+        if sampling and seed is not None:
+            np.random.seed(seed)  # the drafter's walk draws with numpy's global generator
+
+        def law(logits):
+            ids, values = vllm_law(logits.astype(mx.float32), temperature, top_p, top_k)
+            probs = mx.softmax(values, axis=-1)
+            mx.eval(ids, probs)
+            return np.array(ids), np.array(probs.astype(mx.float32), dtype=np.float64)
+
         from mlx_lm.models.cache import make_prompt_cache
 
         cache = cache if cache is not None else make_prompt_cache(self.model)
         stats = stats if stats is not None else {}
         stats.update(steps=0, accepted=[], kept=[], draft_seconds=0.0, verify_seconds=0.0)
-        anchor, (keys, values) = self.prefill(prompt, cache)
+        anchor, (keys, values), last = self.prefill(prompt, cache)
+        if sampling:
+            ids, probs = law(last[None])
+            anchor = int(ids[0][rng.choice(ids.shape[1], p=probs[0] / probs[0].sum())])
         position = len(prompt)  # anchor position = number of context rows
         produced = 1
         yield anchor
@@ -149,7 +194,8 @@ class Speculator:
             return
         while produced < max_tokens:
             started = time.perf_counter()
-            drafts, _ = self.drafter.draft([anchor], [position], (keys, values), self.steps)
+            drafts, log_q, candidates = self.drafter.draft([anchor], [position], (keys, values), self.steps,
+                                                           temperature=temperature, with_candidates=True)
             drafted = time.perf_counter()
             block = [anchor] + [int(t) for t in drafts[0]]
             with self.recorder:
@@ -158,12 +204,18 @@ class Speculator:
                                                layers_per_submit=self.layers_per_submit)
                 else:
                     logits, aux = self._forward(block, cache)
-                choice = mx.argmax(logits, axis=-1)
-                mx.eval(choice, aux)
-            choice = choice.tolist()
-            accepted = 0
-            while accepted < self.steps and block[accepted + 1] == choice[accepted]:
-                accepted += 1
+                if sampling:
+                    mx.async_eval(aux)
+                    ids, probs = law(logits)
+                    accepted, next_token = rejection_step(drafts[0], candidates[0], log_q[0], ids, probs, rng)
+                else:
+                    choice = mx.argmax(logits, axis=-1)
+                    mx.eval(choice, aux)
+                    choice = choice.tolist()
+                    accepted = 0
+                    while accepted < self.steps and block[accepted + 1] == choice[accepted]:
+                        accepted += 1
+                    next_token = choice[accepted]
             keep = accepted + 1
             self.recorder.rollback(cache, keep, len(block))
             k, v = self.drafter.context_kv(aux[:keep], start=position)
@@ -171,7 +223,7 @@ class Speculator:
             values = [mx.concatenate([a, b], axis=1) for a, b in zip(values, v)]
             mx.eval(keys, values, [c.state for c in cache])
             position += keep
-            anchor = choice[accepted]
+            anchor = next_token
             stats["steps"] += 1
             stats["accepted"].append(accepted)
             stats["kept"].append(keep)

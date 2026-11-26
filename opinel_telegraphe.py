@@ -347,12 +347,17 @@ class Telegraphe:
             previous = index
         return tokens, log_q
 
-    def draft(self, anchors, context_lengths, context, steps, temperature=0.0):
+    def draft(self, anchors, context_lengths, context, steps, temperature=0.0, with_candidates=False):
+        """(tokens (B, steps), log_q (B, steps, k)) and, with_candidates, the candidate ids (B, steps, k)
+        over which each row of log_q is the draft law."""
         hidden, final_pre = self.forward(anchors, context_lengths, context, steps)
         candidate_ids = self.candidates(hidden)
         scores = self.transition_scores(candidate_ids, final_pre, anchors)
         mx.eval(candidate_ids, scores)
-        return self.walk(candidate_ids, scores, temperature)
+        tokens, log_q = self.walk(candidate_ids, scores, temperature)
+        if with_candidates:
+            return tokens, log_q, np.array(candidate_ids)
+        return tokens, log_q
 
 
 COMPILE = True  # mx.compile the fixed-shape parts of the draft layers

@@ -575,6 +575,25 @@ sur le précédent). Une tête réduite aux tokens fréquents ne paierait pas : 
 64 000 premiers ids ne couvrent que 94 % des tokens d'un texte français (98,7 %
 en anglais), et chaque token hors liste casse la chaîne du brouillon.
 
+**Échantillonnage par rejet** (`rejection_step` dans `opinel_speculative.py`).
+Avec température, le drafter tire chaque token dans sa loi q (softmax des scores
+de transition sur ses 16 candidats, à la même température) ; la cible garde le
+token avec la probabilité min(1, p/q), p étant la loi de vLLM (température,
+top-k, top-p, `vllm_law` dans `opinel_mlx.py`) ; au premier refus, le token
+suivant est tiré dans max(p − q, 0) renormalisée, et après K acceptations dans
+p. La sortie suit exactement la loi de la cible quelle que soit q
+(`tests/test_speculative.py`, 60 000 tirages). Avec top-k = 40, la décision se
+prend sur le CPU sur 40 valeurs par position. Réglages du chat (0,8 / 0,9 / 40,
+`check_speculative.py --temperature 0.8 --top-p 0.9 --top-k 40`, mesures
+alternées) :
+
+| K | 2 | 3 | 4 |
+|---|---|---|---|
+| tokens par passe | 2,26 | 2,61 | 2,82 |
+| gain | **×1,15** | ×1,14 | ×1,09 |
+
+L'acceptation reste proche du greedy (2,61 contre 2,67 à K = 3).
+
 En résumé, la boucle greedy plafonne vers ×1,2 sur M5 : une vérification de 4
 tokens coûte encore près de deux pas de décodage (27 ms contre 14-15), et le
 drafter un peu plus d'un tiers de pas. Les réponses greedy divergent du décodage
@@ -597,8 +616,8 @@ mesurer :
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
 - Télégraphe (§5) : drafter, boucle greedy et vérification par les noyaux de décodage faits,
-  gain ×1,2 à K = 3 ; restent l'échantillonnage
-  par rejet et l'intégration au chat ;
+  gain ×1,2 à K = 3 en greedy, ×1,15 à K = 2 en échantillonné (rejet exact) ;
+  reste l'intégration au chat ;
 
 Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans
 cette liste : c'est une limite du modèle, que le moteur ne corrige pas.
