@@ -709,6 +709,35 @@ synchrone et avec `OLALA_DETERMINISTIC=1` (4 sorties greedy identiques sur
 8). Le vrai levier est de supprimer le rejeu : le noyau de vérification
 écrirait au passage l'état de chaque position (issue #7).
 
+**Retour arrière Mamba-3 groupé** (issue #7, première partie). Garder l'état
+complet de chaque position dans la vérification coûterait trop cher : 48 têtes
+de 8 800 floats sur 29 couches, environ 49 Mo par position, soit près de
+200 Mo écrits par vérification de 4 tokens. Le rejeu actuel (un `m3_prefill`
+par couche sur les tokens gardés) ne lit et n'écrit l'état qu'une fois, ce qui
+est presque minimal en mémoire. Il coûte pourtant 2,4 ms après un refus
+partiel, pour environ 0,85 ms de lecture et d'écriture : 29 lancements de 48
+groupes de calcul, et MLX remet l'état de sortie à zéro avant chaque appel
+(`init_value=0`).
+
+`opinel_replay.py` reprend la source Metal de `m3_prefill` telle quelle et ne
+change que ses bords : une ligne de lot par couche, avec son paquet de
+paramètres (empilé une fois) et son propre tampon d'état (pas de copie dans un
+tableau empilé), le nombre de tokens en constante, ni sortie y ni log α, et
+pas de remise à zéro. Metal limite un noyau à 31 tampons : 10 couches par
+lancement, soit 3 lancements au lieu de 29. Les états sont **identiques bit à
+bit** à ceux de `m3_prefill` (keep = 1, 2, 3), et `--rollback-check` donne les
+mêmes écarts qu'avant. Rejeu des 29 couches : 2,0-2,2 ms → 0,8-1,2 ms.
+
+Dans la boucle, le gain est petit : greedy ×1,002 puis ×1,010 (32 prompts,
+40,75 → 40,13 ms par passe, Mac très chaud), échantillonné ×1,010. Il est
+conforme à l'attendu (1 ms gagnée sur environ 60 % des passes), et le calcul
+est exact : le rejeu groupé reste activé (`GROUPED_REPLAY`).
+
+Deux essais écartés : faire le rejeu sur un second flux GPU, en parallèle du
+drafter (greedy ×0,952, échantillonné ×1,024 : la synchronisation entre flux
+mange le gain) ; et garder l'état de chaque position (trop de mémoire, voir
+plus haut).
+
 ## Benchmarks multi-machines
 
 `benchmarks/` rassemble des mesures comparables d'une machine à l'autre :

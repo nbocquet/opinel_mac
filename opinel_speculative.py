@@ -83,6 +83,7 @@ class VerifyRecorder:
             return
         if not 1 <= keep < total:
             raise ValueError(f"Retour arrière impossible : {keep} sur {total}.")
+        replays = []  # (cache index, mixer, state, in_proj output) of the layers to replay
         for index, layer in enumerate(self.layers):
             mixer = layer.mixer
             if layer.layer_type == "M":
@@ -94,6 +95,9 @@ class VerifyRecorder:
                 if state is None:
                     state = mx.zeros((out.shape[0], mixer.H, mixer.P * mixer.N + mixer.R * mixer.N + mixer.P
                                       + mixer.A), mx.float32)
+                if GROUPED_REPLAY and out.shape[0] == 1:
+                    replays.append((index, mixer, state, out))
+                    continue
                 cache[index][0] = metal.m3_prefill(
                     out[:, :keep].astype(mx.float32), mixer._prm, state.astype(mx.float32), mixer.H, mixer.P,
                     mixer.N, mixer.R, mixer.A, mixer.n_static, write_y=False)[1]
@@ -103,8 +107,15 @@ class VerifyRecorder:
                 recorded = self.attention[id(mixer)]
                 for slot, values in enumerate(recorded):
                     shift_cache[slot] = values[:, keep - 1:keep]
+        if replays:
+            from opinel_replay import replay
+
+            states = replay([r[1] for r in replays], [r[2] for r in replays], [r[3] for r in replays], keep)
+            for (index, *_), state in zip(replays, states):
+                cache[index][0] = state
 
 
+GROUPED_REPLAY = True  # Mamba-3 rollback replay of 10 layers per Metal launch (opinel_replay, issue #7)
 ASYNC_TAIL = True  # rollback and drafter context append evaluated asynchronously (issue #4)
 
 
