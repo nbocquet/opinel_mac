@@ -51,7 +51,7 @@ def setup(args):
     from opinel_mlx import load_mlx_model
 
     model, tokenizer = load_mlx_model(args.model_dir, "mps")
-    tokens = tokenizer.encode((ROOT / "README.md").read_text(), add_special_tokens=False)
+    tokens = tokenizer.encode((ROOT / "evaluation" / "texte_contexte.md").read_text(), add_special_tokens=False)
     cache = make_prompt_cache(model)
     for start in range(0, 1000, 500):
         model(mx.array(tokens[start:start + 500])[None], cache=cache)

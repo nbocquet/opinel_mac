@@ -175,3 +175,10 @@ Chaque `capture` est liée à l'empreinte de sa génération. Pour le plancher
 bf16, générer avec `--backend torch --device cpu`, puis capturer cette
 génération avec la référence FP32. `--limit 4` permet un essai rapide. Aucun
 verdict de fiabilité factuelle n'est déduit de ces métriques.
+
+## Texte de contexte des mesures de vitesse
+
+`texte_contexte.md` est une copie figée de l'ancien README (26 novembre
+2026). `scripts/profile_verify.py`, `check_speculative.py --rollback-check` et
+`bench_verify.py` en tirent leur contexte de prompt : le figer garde les
+mesures comparables d'une série à l'autre, quand le README change.

@@ -30,7 +30,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model-dir", type=Path, default=ROOT / "models" / "opinel-n8-mlx-n8")
     parser.add_argument("--repeats", type=int, default=24)
-    parser.add_argument("--prompt-file", type=Path, default=ROOT / "README.md")
+    parser.add_argument("--prompt-file", type=Path, default=ROOT / "evaluation" / "texte_contexte.md")
     parser.add_argument("--prompt-tokens", type=int, default=1000)
     args = parser.parse_args()
 

@@ -167,7 +167,7 @@ def main():
         # (sequential replay kernel against the chunked one).
         from opinel_speculative import VerifyRecorder
         recorder = VerifyRecorder(model)
-        ids = tokenizer.encode((ROOT / "README.md").read_text(), add_special_tokens=False)[:506]
+        ids = tokenizer.encode((ROOT / "evaluation" / "texte_contexte.md").read_text(), add_special_tokens=False)[:506]
         base = make_prompt_cache(model)
         model(mx.array(ids[:500])[None], cache=base)
         mx.eval([c.state for c in base])
