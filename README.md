@@ -434,8 +434,9 @@ par mode depuis le terminal du Mac (médiane de 7,7 s par question en `low`,
 
 [Télégraphe](https://huggingface.co/maurienne-ai/Olala-v1.0-mini-7A1B-Telegraphe)
 est le drafter de l'équipe Opinel : il propose K tokens d'un coup, que la cible
-vérifie en une seule passe. `opinel_telegraphe.py` le porte en MLX (étape 1 sur
-4 : le drafter seul ; la boucle spéculative n'existe pas encore). Il lit le
+vérifie en une seule passe. `opinel_telegraphe.py` le porte en MLX et
+`opinel_speculative.py` fait la boucle greedy (étapes 1 et 2 sur 4 ;
+l'échantillonnage et l'intégration au chat restent à faire). Le drafter lit le
 flux résiduel de la cible après les couches 1, 9, 17, 25 et 33, la table
 d'embedding normalisée de la cible (comme vLLM) et, au choix, sa propre tête
 bf16 ou la tête INT8 de la cible. Les poids sont téléchargés à une révision
@@ -454,10 +455,41 @@ choix de la cible. Tokens par passe (acceptés + 1) :
 | Tête INT8 de la cible, couches 8 bits | 2,82 | 3,43 | 3,81 | ≈ 6,3 ms |
 | Fiche Télégraphe (RTX 5090, 2 000 réponses) | 2,96 | 3,70 | 4,20 | |
 
-Selon le prompt, de 2,27 (espagnol) à 3,51 (calcul) à K = 3. La vérification
-coûte 26,9 ms à K = 3 et 32,8 ms à K = 5, contre 14,4 ms pour un token décodé
-seul (`scripts/bench_verify.py`, voir l'issue #1) : avec le chemin de
-préremplissage actuel, le gain attendu est d'environ ×1,2.
+Selon le prompt, de 2,27 (espagnol) à 3,51 (calcul) à K = 3. Cette mesure part
+de chaque position du texte ; la vraie boucle repart plus souvent juste après un
+refus, là où c'est difficile, et accepte moins (voir ci-dessous). Sur un même
+texte, la boucle et la mesure hors ligne proposent les mêmes tokens.
+
+**Vérification et retour arrière.** La cible traite l'ancre et les K
+propositions en une passe ; si seules les `keep` premières positions sont
+acceptées, les caches reviennent à l'état après ces `keep` tokens. Pour
+Mamba-3, l'état d'avant la passe et les sorties d'`in_proj` sont gardés pendant
+la passe, et la récurrence est rejouée sur les `keep` lignes (`m3_prefill`, sans
+relire de poids) ; pour l'attention, le cache KV est raccourci et le cache de
+décalage reprend le k / v brut (et les coefficients a_k / a_v) de la dernière
+position gardée. Contre une passe directe sur les `keep` tokens
+(`scripts/check_speculative.py --rollback-check`) : caches KV et de décalage
+identiques bit à bit, état Mamba-3 à 1e-6 près (noyau séquentiel contre noyau
+par blocs ; les angles de rotation se comparent modulo 2π). À `keep` = 1, la
+passe directe est le décodage fusionné, un autre noyau : écart 1e-2, logits
+suivants de même top-1 et à la même distance du préremplissage complet.
+
+**Gain mesuré, greedy** (`scripts/check_speculative.py`, 16 prompts × 256
+tokens, tête INT8 de la cible, couches du drafter en 8 bits), décodage normal
+77,3 tokens/s :
+
+| K | Tokens/s | Gain | Tokens par passe | Drafter + vérification par passe |
+|---|---|---|---|---|
+| 3 | 80,6 | ×1,04 | 2,65 | 5,6 + 27,2 ms |
+| 5 | 70,5 | ×0,91 | 3,07 | 6,9 + 36,4 ms |
+| 7 | 52,7 | ×0,68 | 3,27 | 11,1 + 50,2 ms |
+
+La vérification par le chemin de préremplissage d'OVH coûte presque deux pas de
+décodage fusionné (saut fixe d'environ 8 ms dès 2 tokens, `scripts/bench_verify.py`,
+signalé dans l'issue #1) : le gain reste marginal sans un chemin de vérification
+fusionné pour les petits blocs. Les réponses greedy divergent du décodage normal
+au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres noyaux
+sur un choix greedy.
 
 ## Pistes de l'issue #1 non traitées
 
@@ -474,7 +506,9 @@ mesurer :
   reproduit le fork, à valider par un test d'aiguille (§12) ;
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
-- boucle spéculative avec Télégraphe (§5) : drafter porté, voir plus haut.
+- Télégraphe (§5) : drafter et boucle greedy faits, gain ×1,04 seulement (voir plus haut) ;
+  restent l'échantillonnage par rejet, l'intégration au chat et surtout une vérification
+  fusionnée pour les petits blocs ;
 
 Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans
 cette liste : c'est une limite du modèle, que le moteur ne corrige pas.
