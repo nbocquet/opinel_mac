@@ -142,7 +142,12 @@ l'équipe Opinel (GPU : 97,7–97,9 % et 0,098–0,104 ; plancher bf16 CPU :
 97,9–98,2 % et 0,089–0,091), aussi sur les documents longs (N°8 : 98,0 % et
 0,065). N°8 reste légèrement derrière BF16, alors qu'il n'arrondit qu'une
 échelle par ligne. La précision du produit matriciel quantifié de MLX est la
-cause la plus probable ; l'écart reste faible. Le rejeu de la conversation
+cause la plus probable ; l'écart reste faible. Sur GSM8K (300 questions,
+protocole de la fiche), N°8 direct obtient 95,0 % en `low` et 94,3 % en
+`medium`, pour 94,3 % et 95,0 % annoncés : les deux écarts (±0,7 point) sont
+dans l'erreur-type de 1,3 point. Les erreurs relues sont des fautes de
+raisonnement, presque toujours sur les mêmes questions dans les deux modes,
+pas des échecs d'extraction ; les 600 réponses donnent un nombre final. Le rejeu de la conversation
 Saint-Julien (`scripts/diagnose_n8.sh`) montre les mêmes erreurs factuelles
 avec les poids BF16 en greedy qu'avec N°8 : elles viennent du modèle, pas de
 la conversion. La conversion Q8 n'a pas été mesurée. Le contexte de 8192 tokens
@@ -402,8 +407,9 @@ un commit et vérifié par SHA256 dans `.cache/gsm8k/`, et ajoute à chacune
 le dernier nombre du canal final. Le rapport est écrit après chaque question
 et peut être repris avec `--resume`. Repères de la fiche pour N°8 : 94,3 % en
 `low` et 95,0 % en `medium`. À n = 300, l'erreur-type est d'environ 1,4 point ;
-le résumé signale un écart de plus de 3 points. Compter une à deux heures
-depuis le terminal du Mac :
+le résumé signale un écart de plus de 3 points. Compter environ une heure
+par mode depuis le terminal du Mac (médiane de 7,7 s par question en `low`,
+9,6 s en `medium`) :
 
 ```sh
 .venv-mlx/bin/python scripts/evaluate_gsm8k.py --reasoning-effort low \
