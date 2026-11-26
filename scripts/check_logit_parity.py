@@ -64,6 +64,7 @@ def main():
     if args.output.exists():
         parser.error("La capture existe déjà ; choisir un autre chemin.")
     configure_environment()
+    os.environ["OLALA_DETERMINISTIC"] = "1"
     if args.reference:
         os.environ["OLALA_MLX_REF"] = "1"
     if args.backend == "mlx":

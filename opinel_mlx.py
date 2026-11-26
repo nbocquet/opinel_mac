@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 import time
 
-from opinel_mac import FinalChannelSink, MODEL, ROOT, final_response
+from opinel_mac import FinalChannelSink, MLX_MAX_NEW_TOKENS, MODEL, ROOT, final_response
 
 
 def validate_provenance(folder):
@@ -85,15 +85,72 @@ def prepare_mlx_turn(tokenizer, messages, reasoning_effort, trim_history=False,
         retained = retained[2:]
 
 
-def collect_response(responses, stream=False):
+def make_vllm_sampler(temperature, top_p, top_k):
+    """Sample as vLLM does: temperature, then top-k, then top-p on the renormalized law.
+
+    mlx-lm's make_sampler filters at T = 1 and only applies the temperature when
+    drawing (issue #1, §11); the model card's scores use vLLM's order.
+    """
+    import mlx.core as mx
+
+    if temperature <= 0:
+        return lambda logprobs: mx.argmax(logprobs, axis=-1)
+
+    def sampler(logprobs):
+        x = logprobs / temperature
+        if 0 < top_k < x.shape[-1]:
+            index = mx.argpartition(-x, kth=top_k - 1, axis=-1)[..., :top_k]
+        else:
+            index = mx.broadcast_to(mx.arange(x.shape[-1]), x.shape)
+        values = mx.take_along_axis(x, index, axis=-1)
+        order = mx.argsort(-values, axis=-1)
+        values = mx.take_along_axis(values, order, axis=-1)
+        index = mx.take_along_axis(index, order, axis=-1)
+        if top_p < 1:
+            probabilities = mx.softmax(values, axis=-1)
+            # Keep a token while the mass before it is below top_p: the first always stays.
+            keep = mx.cumsum(probabilities, axis=-1) - probabilities < top_p
+            values = mx.where(keep, values, -mx.inf)
+        choice = mx.random.categorical(values)
+        return mx.take_along_axis(index, choice[..., None], axis=-1).squeeze(-1)
+
+    return sampler
+
+
+class ThinkingCounter:
+    """Show hidden reasoning progress on an interactive stderr, erased before the answer."""
+
+    def __init__(self, stream=None, every=16):
+        self.stream = stream or sys.stderr
+        self.enabled = self.stream.isatty()
+        self.every = every
+        self.shown = False
+
+    def update(self, tokens):
+        if self.enabled and tokens % self.every == 0:
+            self.stream.write(f"\rréflexion… {tokens} tokens")
+            self.stream.flush()
+            self.shown = True
+
+    def clear(self):
+        if self.shown:
+            self.stream.write("\r\033[K")
+            self.stream.flush()
+            self.shown = False
+
+
+def collect_response(responses, stream=False, max_budget=MLX_MAX_NEW_TOKENS, counter=None):
     """Consume MLX text deltas without revealing analysis or protocol tokens."""
     began = False
+    counter = counter or (ThinkingCounter() if stream else None)
 
     def write(text):
         nonlocal began
         if not text:
             return
         if not began:
+            if counter:
+                counter.clear()
             print("Olala > ", end="", flush=True)
             began = True
         print(text, end="", flush=True)
@@ -105,8 +162,12 @@ def collect_response(responses, stream=False):
             chunks.append(response.text)
             if stream:
                 sink.feed(response.text)
+                if not began and counter:
+                    counter.update(response.generation_tokens)
             last = response
     finally:
+        if counter:
+            counter.clear()
         if began:
             print(flush=True)
     if last is None:
@@ -115,8 +176,8 @@ def collect_response(responses, stream=False):
         answer = final_response("".join(chunks))
     except ValueError as error:
         if last.finish_reason == "length":
-            suggestion = ("Réessayer avec --max-new-tokens 1024."
-                          if last.generation_tokens < 1024 else
+            suggestion = (f"Réessayer avec --max-new-tokens {min(2 * last.generation_tokens, max_budget)}."
+                          if last.generation_tokens < max_budget else
                           "Réessayer avec une demande plus courte, ou /reset pour repartir sans historique.")
             raise ValueError(
                 f"Limite de {last.generation_tokens} tokens atteinte avant une réponse finale complète. "
@@ -128,7 +189,6 @@ def collect_response(responses, stream=False):
 
 def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_history=False):
     from mlx_lm import stream_generate
-    from mlx_lm.sample_utils import make_sampler
     from instructions import resolve
 
     tokens, retained = prepare_mlx_turn(
@@ -144,12 +204,14 @@ def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_histo
     started = time.perf_counter()
     responses = stream_generate(
         model, tokenizer, prompt=tokens, max_tokens=args.max_new_tokens,
-        sampler=make_sampler(temp=getattr(args, "temperature", 0.0),
-                             top_p=getattr(args, "top_p", 1.0), top_k=getattr(args, "top_k", 0)),
+        sampler=make_vllm_sampler(getattr(args, "temperature", 0.0),
+                                  getattr(args, "top_p", 1.0), getattr(args, "top_k", 0)),
     )
     answer, last = collect_response(responses, stream)
     elapsed = time.perf_counter() - started
     print(f"Génération MLX : {last.generation_tokens} tokens en {elapsed:.1f} s "
           f"({last.generation_tokens / elapsed:.2f} tokens/s, préremplissage compris). "
-          f"Décodage : {last.generation_tps:.2f} tokens/s.", file=sys.stderr)
+          f"Préremplissage : {len(tokens)} tokens à {last.prompt_tps:.0f} tokens/s. "
+          f"Décodage : {last.generation_tps:.2f} tokens/s. "
+          f"Pic mémoire : {last.peak_memory:.1f} Go.", file=sys.stderr)
     return answer, retained

@@ -29,6 +29,13 @@ Le preset `baseline` reproduit `low`, génération déterministe et budget de
 1024 tokens. Le preset `ovh` teste `medium`, température 0,8, top-p 0,9,
 top-k 40 et budget de 4096 tokens. Ces réglages sont ceux présentés dans la
 [fiche OVH MLX](https://huggingface.co/OVHaiLLM/Olala-v1.0-mini-7A1B-MLX).
+Avec MLX, l'échantillonnage suit l'ordre de vLLM (température, puis top-k,
+puis top-p sur la loi renormalisée), comme les mesures de la fiche Opinel ;
+le `make_sampler` de mlx-lm filtrait la loi à T = 1. Les rapports `ovh`
+antérieurs ne sont donc pas strictement comparables. Toutes les évaluations
+imposent `OLALA_DETERMINISTIC=1`, qui fixe l'ordre de sommation des experts
+dans les kernels fusionnés (environ 3 % plus lent selon OVH) ; les rapports
+MLX enregistrent `deterministic_kernels` et `tpa_cache`.
 Ce second preset modifie plusieurs facteurs ; il ne permet pas d'attribuer
 un écart à la seule température ou au seul raisonnement. Une seule graine
 ne suffit pas à caractériser un réglage aléatoire : répéter avec `--seed 1`,

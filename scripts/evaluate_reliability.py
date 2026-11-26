@@ -90,6 +90,8 @@ def main():
     for key, value in settings.items():
         setattr(args, key, value)
     configure_environment()
+    # Floating-point atomics in the fused MoE vary between runs (issue #1, §6).
+    os.environ["OLALA_DETERMINISTIC"] = "1"
     if args.reference:
         os.environ["OLALA_MLX_REF"] = "1"
     if args.backend == "mlx":
@@ -101,6 +103,9 @@ def main():
               "model_dir": str(folder.resolve()), "preset": args.preset, "seed": args.seed,
               "reference_kernels": args.backend == "mlx" and (args.reference or os.environ.get("OLALA_MLX_REF") == "1" or args.device == "cpu"),
               **settings}
+    if args.backend == "mlx":
+        config["deterministic_kernels"] = True
+        config["tpa_cache"] = os.environ.get("OLALA_TPA_CACHE", "auto")
     # Absent without instructions, so earlier reports keep the same identity.
     if describe(args.instructions):
         config["instructions"] = describe(args.instructions)

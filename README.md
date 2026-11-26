@@ -49,9 +49,13 @@ Le téléchargement représente environ 7,1 Go. Modèle et code distant sont ép
 à la révision `184f9b2d4e4bd02cec585ad20b441b44d3e07b55`.
 L'exécution charge le code Python de cette révision via `trust_remote_code=True`.
 Les caches restent dans `.cache/`. Après téléchargement, ajouter `--offline`.
-La génération est déterministe, avec un raisonnement `low` et une limite de
-256 tokens en génération simple, 1024 en chat. Ce budget inclut le raisonnement
-masqué et la réponse visible. Le mode `disabled` a échoué sur des calculs simples
+La génération simple est déterministe (greedy). Le chat échantillonne avec les
+réglages de la fiche du modèle, `temperature=0.8, top_p=0.9, top_k=40` ; tous
+ses scores sont mesurés ainsi. `--temperature 0` rend le chat greedy, et
+`--temperature`, `--top-p` et `--top-k` règlent chaque paramètre. Le
+raisonnement est `low` par défaut. Avec PyTorch, la limite est de 256 tokens en
+génération simple et de 1024 en chat (1024 au plus). Ce budget inclut le
+raisonnement masqué et la réponse visible. Le mode `disabled` a échoué sur des calculs simples
 pendant les essais ; conserver `low`. Les réponses tronquées sont signalées
 et ne sont pas affichées comme des réponses complètes.
 
@@ -66,8 +70,11 @@ lorsqu'il est présent. Depuis le dossier du projet :
 ```
 
 Dans la session de développement, PyTorch 2.15.0 inclut MPS mais le déclare
-indisponible ; les essais GPU se font depuis le terminal local. Le code limite le cache
-RoPE à 2048 positions et ne calcule les logits que pour le dernier token.
+indisponible ; les essais GPU se font depuis le terminal local. Le code ne calcule les logits
+que pour le dernier token. Olala n'a pas de RoPE (`rope_theta = 0`) : la vraie
+limite du chemin PyTorch est le préremplissage `eager`, qui matérialise des
+scores L × L en FP32 (environ 0,2 Go à 1k tokens, 12,9 Go à 8k, par couche
+d'attention).
 Le périphérique par défaut est `auto` : MPS lorsqu'il est accessible, sinon CPU.
 
 ## Conversation interactive
@@ -93,16 +100,22 @@ Seules les réponses finales complètes sont conservées. Si une génération es
 tronquée ou échoue, l'échange n'entre pas dans l'historique ; un avertissement
 précise que le texte éventuellement déjà affiché est incomplet. Les échanges les
 plus anciens sont retirés, par paires question/réponse, lorsque le prompt dépasse
-le budget disponible ; ce retrait est signalé. Avec MLX, la fenêtre totale est
-de **8192 tokens** par défaut, dont 1024 réservés à la génération : instructions,
-historique et nouveau message disposent donc de 7168 tokens. Avec PyTorch,
+le budget disponible ; ce retrait est signalé. Avec MLX, le budget de génération
+est de **4096 tokens** en `disabled`, `low` et `medium`, et de **8192** en `high`
+(16384 au plus). La fenêtre totale ajoute 7168 tokens pour les instructions,
+l'historique et le nouveau message : 11264 tokens par défaut. Pendant
+l'analyse masquée, un compteur « réflexion… N tokens » s'affiche sur stderr ;
+la ligne de statistiques indique ensuite la vitesse de préremplissage, celle
+du décodage et le pic mémoire. Avec PyTorch,
 la fenêtre reste de 2048 tokens et l'entrée limitée à 1024. Un message seul trop
 long est refusé.
 Les options `--reasoning-effort low` et `--max-new-tokens 512` fonctionnent aussi en chat.
 `--instructions opinel-fr-v1` ajoute des consignes développeur en français (expérimental,
 désactivé par défaut tant que leur effet n'est pas mesuré ; voir `evaluation/README.md`).
 `--context-length` règle la fenêtre totale (jusqu'à 32768 pour MLX, 2048 pour
-PyTorch). Cette fenêtre doit dépasser le budget `--max-new-tokens`.
+PyTorch). Cette fenêtre doit dépasser le budget `--max-new-tokens`. Avec MLX,
+une fenêtre explicite sans budget explicite réserve au plus la moitié de la
+fenêtre à la génération.
 Une limite explicite plus basse reste respectée ; si elle est atteinte, le message
 d'erreur indique le budget épuisé et comment réessayer.
 
@@ -127,8 +140,8 @@ Pour essayer les poids BF16 déjà exportés avec le moteur MLX :
 
 ```sh
 ./opinel chat --backend mlx
-# Même réglage, explicite :
-./opinel chat --backend mlx --context-length 8192
+# Greedy, avec un budget de raisonnement plus large :
+./opinel chat --backend mlx --temperature 0 --reasoning-effort high
 ```
 
 Pour produire la version MLX Q8 puis l'utiliser :

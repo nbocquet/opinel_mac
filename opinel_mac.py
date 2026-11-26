@@ -14,6 +14,17 @@ ROOT = Path(__file__).resolve().parent
 MODEL = "maurienne-ai/Olala-v1.0-mini-7A1B-Opinel-N8"
 REVISION = "184f9b2d4e4bd02cec585ad20b441b44d3e07b55"
 FINAL_MARKER = "<|channel_start|>final<|content|>"
+# Sampling used for every score on the model card (issue #1, §2).
+CHAT_SAMPLING = {"temperature": 0.8, "top_p": 0.9, "top_k": 40}
+GREEDY = {"temperature": 0.0, "top_p": 1.0, "top_k": 0}
+# PyTorch's eager prefill materializes L x L scores; MLX lets reasoning breathe (§11).
+TORCH_MAX_NEW_TOKENS = 1024
+MLX_MAX_NEW_TOKENS = 16384
+MLX_PROMPT_TOKENS = 7168
+
+
+def default_mlx_budget(reasoning_effort):
+    return 8192 if reasoning_effort == "high" else 4096
 
 
 def hf_parameter_name(name):
@@ -49,6 +60,8 @@ def configure_environment():
     os.environ["OLALA_ATTN_IMPL"] = "eager"
     os.environ.setdefault("HF_HOME", str(ROOT / ".cache" / "huggingface"))
     os.environ.setdefault("HF_MODULES_CACHE", str(ROOT / ".cache" / "modules"))
+    # Read by MLX at import; about 2 % faster according to OVH (issue #1, §8).
+    os.environ.setdefault("MLX_MAX_OPS_PER_BUFFER", "400")
 
 
 def final_response(text):
@@ -282,8 +295,8 @@ def load_model(folder, device, *, context_length=2048, unquantized_reference=Fal
     # Bypass NVIDIA ModelOpt; load and dequantize every weight ourselves.
     if hasattr(config, "quantization_config"):
         del config.quantization_config
-    # The upstream RoPE cache allocates twice this limit in each attention layer.
-    # Our CLI already caps prompt + continuation at 2048 tokens.
+    # Olala's attention has no RoPE (rope_theta = 0), so this only keeps the unused
+    # rotary module small; the real PyTorch limit is the eager L x L prefill.
     config.max_position_embeddings = min(config.max_position_embeddings, context_length)
     with torch.device("meta"):
         model = AutoModelForCausalLM.from_config(
@@ -365,8 +378,13 @@ def parse_args(argv=None):
     parser.add_argument("--device", choices=["auto", "mps", "cpu"], default="auto")
     parser.add_argument("--prompt", default="Présente-toi en une phrase en français.")
     parser.add_argument("--max-new-tokens", type=int,
-                        help="Budget incluant le raisonnement : 1024 en chat, 256 en génération simple")
+                        help="Budget incluant le raisonnement. PyTorch : 1024 en chat, 256 en génération "
+                             "simple. MLX : 4096, ou 8192 en raisonnement high (16384 au plus)")
     parser.add_argument("--reasoning-effort", choices=["disabled", "low", "medium", "high"], default="low")
+    parser.add_argument("--temperature", type=float,
+                        help="0 : greedy. Par défaut 0,8 en chat (réglage de la fiche), 0 sinon")
+    parser.add_argument("--top-p", type=float, help="Par défaut 0,9 en chat, 1 sinon")
+    parser.add_argument("--top-k", type=int, help="Par défaut 40 en chat, 0 (désactivé) sinon")
     parser.add_argument("--instructions", choices=["aucune", "opinel-fr-v1"], default="aucune",
                         help="Consignes développeur ajoutées au template (expérimental)")
     parser.add_argument("--offline", action="store_true")
@@ -377,12 +395,27 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.command == "convert-mlx" and args.backend != "torch":
         parser.error("convert-mlx utilise l'environnement PyTorch pour lire N8 ; retirer --backend mlx.")
-    if args.max_new_tokens is None:
-        args.max_new_tokens = 1024 if args.command == "chat" else 256
-    if args.max_new_tokens < 1 or args.max_new_tokens > 1024:
-        parser.error("--max-new-tokens doit être compris entre 1 et 1024.")
+    sampling = CHAT_SAMPLING if args.command == "chat" else GREEDY
+    for key, value in sampling.items():
+        if getattr(args, key) is None:
+            setattr(args, key, value)
+    if args.temperature < 0 or not 0 < args.top_p <= 1 or args.top_k < 0:
+        parser.error("Échantillonnage invalide : temperature ≥ 0, 0 < top-p ≤ 1, top-k ≥ 0.")
+    mlx = args.backend == "mlx"
+    budget_defaulted = args.max_new_tokens is None
+    if budget_defaulted:
+        if mlx:
+            args.max_new_tokens = default_mlx_budget(args.reasoning_effort)
+        else:
+            args.max_new_tokens = 1024 if args.command == "chat" else 256
+    maximum_budget = MLX_MAX_NEW_TOKENS if mlx else TORCH_MAX_NEW_TOKENS
+    if not 1 <= args.max_new_tokens <= maximum_budget:
+        parser.error(f"--max-new-tokens doit être compris entre 1 et {maximum_budget} pour {args.backend}.")
     if args.context_length is None:
-        args.context_length = 8192 if args.backend == "mlx" else 2048
+        args.context_length = max(8192, args.max_new_tokens + MLX_PROMPT_TOKENS) if mlx else 2048
+    elif mlx and budget_defaulted:
+        # An explicit, smaller window keeps half of itself for the prompt.
+        args.max_new_tokens = min(args.max_new_tokens, args.context_length // 2)
     maximum_context = 32768 if args.backend == "mlx" else 2048
     if not 1 <= args.context_length <= maximum_context:
         parser.error(f"--context-length doit être compris entre 1 et {maximum_context} pour {args.backend}.")
