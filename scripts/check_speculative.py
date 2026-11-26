@@ -41,8 +41,11 @@ def main():
     parser.add_argument("--bf16-layers", action="store_true", help="Couches du drafter en bf16 au lieu de 8 bits")
     parser.add_argument("--prefill-verify", action="store_true",
                         help="Vérification par le chemin de préremplissage d'OVH au lieu des noyaux de décodage")
-    parser.add_argument("--mamba-prefill", action="store_true",
-                        help="Mamba-3 en un seul m3_prefill par bloc au lieu d'un pas de décodage par token")
+    parser.add_argument("--mamba-by-token", action="store_true",
+                        help="Mamba-3 par un pas de décodage par token au lieu d'un seul m3_prefill par bloc")
+    parser.add_argument("--layers-per-submit", type=int, nargs="+",
+                        help="Envoi au GPU toutes les N couches pendant la construction (0 : à la fin) ; "
+                             "plusieurs valeurs sont mesurées en alternance")
     parser.add_argument("--rollback-check", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -57,7 +60,7 @@ def main():
     from opinel_speculative import Speculator
     from opinel_telegraphe import Telegraphe, prepare
     import opinel_verify
-    opinel_verify.MAMBA_BY_TOKEN = not args.mamba_prefill
+    opinel_verify.MAMBA_BY_TOKEN = args.mamba_by_token
 
     if not (args.drafter_dir / "mask_embedding.npy").exists():
         prepare(args.drafter_dir)
@@ -101,13 +104,15 @@ def main():
     encoded = [encode(text) for text in prompts]
     # Plain and speculative runs alternate prompt by prompt: a Mac that heats up (or changes power
     # source) during the run then slows every variant alike instead of the last ones measured.
-    speculators = {steps: Speculator(model, drafter, steps=steps, decode_kernels=not args.prefill_verify)
-                   for steps in args.steps}
+    submits = args.layers_per_submit or [None]
+    variants = [(steps, submit) for steps in args.steps for submit in submits]
+    speculators = {variant: Speculator(model, drafter, steps=variant[0], decode_kernels=not args.prefill_verify,
+                                       layers_per_submit=variant[1]) for variant in variants}
     plain(encoded[0])  # warm-up
     for speculator in speculators.values():
         speculative(speculator, encoded[0])  # warm-up of each block length
     baseline = []
-    runs = {steps: [] for steps in args.steps}
+    runs = {variant: [] for variant in variants}
     for prompt in encoded:
         baseline.append(plain(prompt))
         for steps, speculator in speculators.items():
@@ -117,9 +122,11 @@ def main():
           f"mesures alternées).", flush=True)
 
     report = {"plain_tokens_per_second": plain_rate, "interleaved": True, "speculative": {}}
-    for steps in args.steps:
+    for variant in variants:
+        steps, submit = variant
+        label = f"K = {steps}" + ("" if submit is None else f", envoi toutes les {submit or '—'} couches")
         produced, seconds, kept, draft_s, verify_s, agreements = 0, 0.0, [], 0.0, 0.0, []
-        for (tokens, elapsed, stats), (reference, _) in zip(runs[steps], baseline):
+        for (tokens, elapsed, stats), (reference, _) in zip(runs[variant], baseline):
             produced += len(tokens) - 1
             seconds += elapsed
             kept += stats["kept"]
@@ -130,8 +137,8 @@ def main():
         row = {"tokens_per_second": rate, "speedup": rate / plain_rate, "tokens_per_step": float(np.mean(kept)),
                "draft_ms": 1000 * draft_s / len(kept), "verify_ms": 1000 * verify_s / len(kept),
                "identical_prefix_median": statistics.median(agreements)}
-        report["speculative"][str(steps)] = row
-        print(f"K = {steps} : {rate:.1f} tokens/s (×{row['speedup']:.2f}), {row['tokens_per_step']:.2f} tokens par "
+        report["speculative"][str(steps) if submit is None else f"{steps}/{submit}"] = row
+        print(f"{label} : {rate:.1f} tokens/s (×{row['speedup']:.2f}), {row['tokens_per_step']:.2f} tokens par "
               f"passe, drafter {row['draft_ms']:.1f} ms + vérification {row['verify_ms']:.1f} ms par passe, "
               f"début identique au greedy normal : {100 * row['identical_prefix_median']:.0f} % (médiane)",
               flush=True)

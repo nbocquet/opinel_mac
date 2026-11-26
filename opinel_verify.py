@@ -25,9 +25,12 @@ import mlx.core as mx
 from opinel_telegraphe import TARGET_LAYERS
 
 MAX_ROWS = 8
-MAMBA_BY_TOKEN = True  # Mamba-3 decode step per token (False: one sequential m3_prefill for the block)
+MAMBA_BY_TOKEN = False  # True: Mamba-3 decode step per token (False: one sequential m3_prefill for the block)
 ATTENTION_BY_TOKEN = True  # attention layers through the decode kernels, one token after the other
 DENSE_MATMUL_FROM = 3  # rows from which the dense projections go through MLX's quantized matmul
+# Start the GPU on the first layers while Python builds the rest of the graph (every N layers;
+# 0: one evaluation at the end, by the caller)
+LAYERS_PER_SUBMIT = 3
 
 
 @contextmanager
@@ -105,7 +108,7 @@ def _attention_by_token(metal, step, layer, cache, big, small, start, recorder=N
     return mx.concatenate(outs, axis=0)
 
 
-def verify_block(model, tokens, cache, recorder=None, aux_layers=TARGET_LAYERS):
+def verify_block(model, tokens, cache, recorder=None, aux_layers=TARGET_LAYERS, layers_per_submit=None):
     """Logits (L, vocab) and drafter aux rows (L, 5 * D) of the L tokens; updates cache like a forward.
 
     With a recorder (opinel_speculative.VerifyRecorder), records the Mamba-3 states after
@@ -115,6 +118,7 @@ def verify_block(model, tokens, cache, recorder=None, aux_layers=TARGET_LAYERS):
 
     inner = model.model
     plan = metal._plan(inner)
+    submit = LAYERS_PER_SUBMIT if layers_per_submit is None else layers_per_submit
     T = len(tokens)
     if not 2 <= T <= MAX_ROWS:
         raise ValueError(f"La vérification par les noyaux de décodage traite de 2 à {MAX_ROWS} tokens.")
@@ -172,6 +176,8 @@ def verify_block(model, tokens, cache, recorder=None, aux_layers=TARGET_LAYERS):
             prev_geo, prev_li = step["geo_mlp"], li
             if li in aux_layers:
                 aux.append(metal.geodesic(resid, g, prev_geo, prev_li, T, D))
+            if submit and (li + 1) % submit == 0:
+                mx.async_eval(resid, g, *aux)
         final = metal.geodesic(resid, g, prev_geo, prev_li, T, D)
         logits = metal.head(model.lm_head, final.reshape(T, 1, D)).reshape(T, -1)
     return logits, mx.concatenate(aux, axis=-1)

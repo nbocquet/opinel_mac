@@ -542,9 +542,26 @@ l'autre, les dernières paraissaient plus lentes) :
 | complet (`OLALA_TPA_CACHE=full`) | ×1,08 | ×1,08 | ×1,06 |
 
 À K = 3, une passe coûte le drafter (6,4 ms) plus la vérification (30,4 ms en
-boucle, machine chaude). Restent : environ 2 ms de construction du graphe côté
-CPU à chaque vérification, le drafter qui grossit avec K, et la part
-proportionnelle au nombre de tokens. Les réponses greedy divergent du décodage
+boucle, machine chaude).
+
+**Construction du graphe.** Python met environ 2 ms à construire le graphe d'une
+vérification avant que le GPU ne démarre. `opinel_verify` lance donc l'évaluation
+(`mx.async_eval`) toutes les 3 couches : le GPU traite le début pendant que la
+suite se construit. Banc d'essai : 16,9 ms au lieu de 19,9 à 2 tokens, 20,6 au
+lieu de 23,0 à 4. Dans la boucle, mesures alternées
+(`check_speculative.py --layers-per-submit 0 3`, machine au calme) :
+
+| Envoi au GPU | K = 2 | K = 3 |
+|---|---|---|
+| à la fin | ×1,17 | ×1,21 |
+| toutes les 3 couches | ×1,21 | **×1,24** |
+
+Le gain est plus petit en boucle (0,5 ms par vérification) qu'au banc : la
+boucle évalue déjà le drafter et les caches entre deux vérifications. Les
+mesures se font machine au calme et sur secteur : sur batterie, ou pendant un
+inventaire logiciel (`ndtrack`, `flxfsscan`), le décodage normal tombe de 77 à
+43-62 tokens/s et la boucle, plus dépendante du CPU, encore davantage. Restent
+le drafter (5,7 ms à K = 3) et la part proportionnelle au nombre de tokens. Les réponses greedy divergent du décodage
 normal au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres
 noyaux sur un choix greedy.
 
@@ -564,7 +581,7 @@ mesurer :
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
 - Télégraphe (§5) : drafter, boucle greedy et vérification par les noyaux de décodage faits,
-  gain ×1,19 à K = 3 ; restent la construction du graphe, le coût du drafter, l'échantillonnage
+  gain ×1,24 à K = 3 ; restent le coût du drafter, l'échantillonnage
   par rejet et l'intégration au chat ;
 
 Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans

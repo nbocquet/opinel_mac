@@ -107,8 +107,9 @@ class VerifyRecorder:
 class Speculator:
     """Greedy speculative generation of the MLX target with a Télégraphe drafter."""
 
-    def __init__(self, model, drafter, steps=3, decode_kernels=True):
+    def __init__(self, model, drafter, steps=3, decode_kernels=True, layers_per_submit=None):
         self.model, self.drafter, self.steps = model, drafter, steps
+        self.layers_per_submit = layers_per_submit
         # verify through the decode kernels of the OVH module (opinel_verify) rather than its prefill path
         self.decode_kernels = decode_kernels and steps + 1 <= 8
         self.records = capture_aux(model)
@@ -153,7 +154,8 @@ class Speculator:
             block = [anchor] + [int(t) for t in drafts[0]]
             with self.recorder:
                 if self.decode_kernels:
-                    logits, aux = verify_block(self.model, block, cache, recorder=self.recorder)
+                    logits, aux = verify_block(self.model, block, cache, recorder=self.recorder,
+                                               layers_per_submit=self.layers_per_submit)
                 else:
                     logits, aux = self._forward(block, cache)
                 choice = mx.argmax(logits, axis=-1)
