@@ -500,7 +500,20 @@ fusionné inchangé (14,6 ms) ; `OLALA_M3_CHUNKED=0`, `OLALA_MOE_V3=0` et
 l'absence de `OLALA_DETERMINISTIC` ne changent rien. Avec ce cache complet, la
 boucle greedy donne ×1,15 à K = 3 (88,5 tokens/s, 2,73 tokens par passe,
 5,5 + 25,2 ms) et ×0,99 à K = 5 ; le cache complet reste à mesurer sur les
-longs contextes, où le factorisé est choisi sur M5. Les réponses greedy divergent du décodage normal
+longs contextes, où le factorisé est choisi sur M5.
+
+**Une vérification fusionnée n'y changerait presque rien.** Le décodage
+fusionné d'OVH sur T séquences indépendantes (son batching, `--rows`) coûte
+14,1 / 17,2 / 26,5 / 31,8 / 40,0 ms pour T = 1 / 2 / 4 / 5 / 8 : à 4 tokens,
+autant que le chemin générique (26,6 ms). Chaque token de plus lit ses 6 experts
+routés à chaque couche, soit 3 à 4,5 ms : le surcoût du chemin générique
+n'existe vraiment qu'à 2 tokens. Une passe de vérification qui reprend les
+noyaux de `metal.decode` (lignes = tokens du bloc, Mamba-3 par `m3_prefill`,
+attention générique) donne les mêmes logits mais pas plus vite : 23,3 ms à
+2 tokens, 30,1 ms à 4. Les petits K ne compensent pas : ×0,86 à K = 1 et ×1,02 à
+K = 2 (cache complet). Sur ce MoE et cette bande passante, le décodage spéculatif
+plafonne vers ×1,15-1,3 ; le reste à gagner est surtout dans le drafter
+(5,5 ms par passe, environ un tiers d'un pas de décodage). Les réponses greedy divergent du décodage normal
 au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres noyaux
 sur un choix greedy.
 
@@ -519,9 +532,9 @@ mesurer :
   reproduit le fork, à valider par un test d'aiguille (§12) ;
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
-- Télégraphe (§5) : drafter et boucle greedy faits, gain ×1,04, ×1,15 avec `OLALA_TPA_CACHE=full` (voir plus haut) ;
-  restent l'échantillonnage par rejet, l'intégration au chat et surtout une vérification
-  fusionnée pour les petits blocs ;
+- Télégraphe (§5) : drafter et boucle greedy faits, gain ×1,04, ×1,15 avec `OLALA_TPA_CACHE=full` ;
+  une vérification fusionnée ne ferait pas mieux (les experts de chaque token dominent, voir plus
+  haut) ; restent le coût du drafter, l'échantillonnage par rejet et l'intégration au chat ;
 
 Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans
 cette liste : c'est une limite du modèle, que le moteur ne corrige pas.

@@ -11,6 +11,9 @@ from the same snapshot (median of the repeats, synchronous):
 3. --variants: the same t(L) table in a fresh process for each OVH switch read
    at import (sequential Mamba-3 prefill kernel, MoE kernel version, full TPA
    cache, non-deterministic MoE sums).
+4. --rows: the fused decode itself over T independent sequences (its batching
+   use): the best a fused verify of T tokens could do with these kernels. Each
+   extra row reads its own 6 routed experts per layer.
 """
 
 import argparse
@@ -125,12 +128,35 @@ def breakdown(args):
     return results
 
 
+def rows(args):
+    mx, model, cache, following = setup(args)
+    from vendor.ovh_olala.model import make_cache
+
+    text = following * 64
+    results = {}
+    for count in (1, 2, 4, 5, 6, 8):
+        batch = make_cache(model.model.layers)
+        mx.eval(model(mx.array([text[i * 8:i * 8 + 64] for i in range(count)]), cache=batch))
+        times = []
+        for repeat in range(args.repeats + 3):
+            work = copy.deepcopy(batch)
+            step = mx.array([[text[500 + repeat + i]] for i in range(count)])
+            mx.synchronize()
+            began = time.perf_counter()
+            mx.eval(model(step, cache=work))
+            if repeat >= 3:
+                times.append(time.perf_counter() - began)
+        results[count] = 1000 * statistics.median(times)
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model-dir", type=Path, default=ROOT / "models" / "opinel-n8-mlx-n8")
     parser.add_argument("--repeats", type=int, default=20)
     parser.add_argument("--breakdown", action="store_true")
     parser.add_argument("--variants", action="store_true")
+    parser.add_argument("--rows", action="store_true")
     parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
@@ -146,6 +172,10 @@ def main():
             results[label] = json.loads(out.strip().splitlines()[-1])
             print(f"{label:42}" + "  ".join(f"L={k.split()[0]}{'g' if 'générique' in k else ''}: {v:5.1f}"
                                             for k, v in results[label].items()), flush=True)
+        return 0
+    if args.rows:
+        for count, value in rows(args).items():
+            print(f"décodage fusionné, {count} séquence(s) indépendante(s) : {value:6.2f} ms")
         return 0
     if args.breakdown:
         for length, row in breakdown(args).items():
