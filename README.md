@@ -629,6 +629,17 @@ drafter gagne 2 ms entre 500 et 8 000 tokens. Le gain se joue donc sur un
 coût fixe par passe d'environ 10 ms (drafter, loi d'échantillonnage,
 synchronisations) face à 2 à 2,5 tokens gardés.
 
+Le contexte du drafter est désormais préalloué et écrit en place
+(`DraftContext`) : les tokens acceptés s'écrivent après le contexte au lieu de
+le recopier, et le bloc proposé aussi, si bien que l'attention lit une vue du
+tampon. Brouillons identiques ; drafter, ajout au contexte compris, 4,84 →
+4,65 ms à 500 tokens, 6,68 → 4,99 ms à 5 000, 7,85 → 5,26 ms à 8 000. Sur la
+conversation variée, rejouée : ×1,09 au total (63,2 contre 58,0 tokens/s),
+décodage médian ×1,17 (62,5 contre 53,3) ; d'un run à l'autre le total varie
+de quelques pourcents (×1,12 au run précédent). Les tours gagnent quand le
+drafter garde au moins 2,4 tokens par passe et perdent légèrement sous 2,2,
+dans les tours longs.
+
 En résumé, la boucle greedy plafonne vers ×1,2 sur M5 : une vérification de 4
 tokens coûte encore près de deux pas de décodage (27 ms contre 14-15), et le
 drafter un peu plus d'un tiers de pas. Les réponses greedy divergent du décodage

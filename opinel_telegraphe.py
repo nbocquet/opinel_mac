@@ -249,15 +249,28 @@ class Telegraphe:
         x = mx.concatenate([self.embedding[anchor_ids][:, None],
                             mx.broadcast_to(self.mask_embedding, (B, steps, self.mask_embedding.shape[-1]))], axis=1)
         anchor_features = self.token_features(anchor_ids)
-        keys_ctx, values_ctx = context
-        context_size = keys_ctx[0].shape[1]
+        in_place = isinstance(context, DraftContext)
+        if in_place:
+            if B != 1:
+                raise ValueError("DraftContext : un seul bloc à la fois.")
+            context_size = context.length
+            context.reserve(n)
+        else:
+            keys_ctx, values_ctx = context
+            context_size = keys_ctx[0].shape[1]
         mask = self.attention_mask(context_lengths, context_size, n)
         offsets = mx.array(context_lengths)
         pre = x
         for i in range(self.layers):
             q, k, v = self._compiled("pre", i)(x, offsets)
-            keys = mx.concatenate([mx.broadcast_to(keys_ctx[i][None], (B, *keys_ctx[i].shape)), k], axis=2)
-            values = mx.concatenate([mx.broadcast_to(values_ctx[i][None], (B, *values_ctx[i].shape)), v], axis=2)
+            if in_place:  # block K / V written after the context: attention on a view, no copy
+                context.write(i, k[0], v[0], 0)
+                keys = context.keys[i][None, :, :context_size + n]
+                values = context.values[i][None, :, :context_size + n]
+            else:
+                keys = mx.concatenate([mx.broadcast_to(keys_ctx[i][None], (B, *keys_ctx[i].shape)), k], axis=2)
+                values = mx.concatenate([mx.broadcast_to(values_ctx[i][None], (B, *values_ctx[i].shape)), v],
+                                        axis=2)
             out = mx.fast.scaled_dot_product_attention(q, keys, values, scale=self.head_dim ** -0.5, mask=mask)
             x, pre = self._compiled("post", i)(x, out, anchor_features)
         return rms_norm(x, self.p("norm.weight"), self.eps), pre
@@ -361,6 +374,58 @@ class Telegraphe:
 
 
 COMPILE = True  # mx.compile the fixed-shape parts of the draft layers
+
+
+class DraftContext:
+    """K / V of the drafter's context in preallocated buffers, written in place.
+
+    Appending rows writes them after the current length instead of copying the whole
+    context (mx.concatenate), and a forward writes its block's K / V after the context
+    too, so the attention reads a view of the buffer. Rows past `length` are scratch.
+    """
+
+    def __init__(self, layers, kv_heads, head_dim, step=4096, dtype=mx.bfloat16):
+        self.step, self.length = step, 0
+        self.keys = [mx.zeros((kv_heads, step, head_dim), dtype) for _ in range(layers)]
+        self.values = [mx.zeros((kv_heads, step, head_dim), dtype) for _ in range(layers)]
+
+    @property
+    def capacity(self):
+        return self.keys[0].shape[1]
+
+    def reserve(self, rows):
+        """Room for `rows` rows after the current length (grows by whole steps, one copy)."""
+        missing = self.length + rows - self.capacity
+        if missing > 0:
+            grow = -(-missing // self.step) * self.step
+            pad = lambda x: mx.concatenate([x, mx.zeros((x.shape[0], grow, x.shape[2]), x.dtype)], axis=1)  # noqa: E731
+            self.keys, self.values = [pad(x) for x in self.keys], [pad(x) for x in self.values]
+
+    def write(self, layer, keys, values, offset):
+        """Write rows (kv_heads, n, head_dim) at length + offset (offset > 0 for a scratch block)."""
+        start = self.length + offset
+        self.keys[layer][:, start:start + keys.shape[1], :] = keys
+        self.values[layer][:, start:start + values.shape[1], :] = values
+
+    def append(self, keys, values):
+        """Append context_kv's lists (one (kv_heads, n, head_dim) array per layer)."""
+        rows = keys[0].shape[1]
+        self.reserve(rows)
+        for layer, (k, v) in enumerate(zip(keys, values)):
+            self.write(layer, k, v, 0)
+        self.length += rows
+        return self
+
+    def arrays(self):
+        return self.keys + self.values
+
+    def copy(self):
+        twin = DraftContext.__new__(DraftContext)
+        twin.step, twin.length = self.step, self.length
+        twin.keys = [mx.array(x) for x in self.keys]
+        twin.values = [mx.array(x) for x in self.values]
+        mx.eval(twin.arrays())
+        return twin
 
 _SINKS = {}  # id(layer) -> list filled by the patched __call__ (MLX modules hold no plain attributes)
 

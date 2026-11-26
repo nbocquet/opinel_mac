@@ -230,13 +230,16 @@ class PromptCache:
         reused = len(self.tokens)
         if (self.snapshot is not None and self.context is not None and 0 < reused < len(tokens)
                 and tokens[:reused] == self.tokens):
-            return copy.deepcopy(self.snapshot), self.context, reused
+            context = self.context.copy() if hasattr(self.context, "copy") else self.context
+            return copy.deepcopy(self.snapshot), context, reused
         return make_prompt_cache(self.model), None, 0
 
     def keep_speculative(self, tokens):
         """on_prefix of Speculator.prefill: snapshot every prompt token but the last."""
         def callback(cache, context):
-            self.tokens, self.snapshot, self.context = list(tokens[:-1]), copy.deepcopy(cache), context
+            # the drafter context is written in place during the turn: keep a copy
+            self.tokens, self.snapshot = list(tokens[:-1]), copy.deepcopy(cache)
+            self.context = context.copy() if hasattr(context, "copy") else context
         return callback
 
     def start(self, tokens):

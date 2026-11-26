@@ -126,3 +126,33 @@ class TelegrapheTests(unittest.TestCase):
             got = mask_embedding_from_archive(path)
         np.testing.assert_allclose(got, values, atol=1e-2)
         self.assertEqual(got.dtype, np.float32)
+
+
+@unittest.skipIf(mx is None, "MLX absent de cet environnement")
+class DraftContextTests(unittest.TestCase):
+    def setUp(self):
+        mx.set_default_device(mx.cpu)
+
+    def test_in_place_context_drafts_like_the_concatenated_one(self):
+        from opinel_telegraphe import DraftContext
+        d = tiny_drafter()
+        aux = mx.array(np.random.default_rng(3).normal(0, 1, (11, 5 * 32)).astype(np.float32)).astype(mx.bfloat16)
+        keys, values = d.context_kv(aux[:7])
+        k2, v2 = d.context_kv(aux[7:], start=7)
+        concatenated = ([mx.concatenate([a, b], axis=1) for a, b in zip(keys, k2)],
+                        [mx.concatenate([a, b], axis=1) for a, b in zip(values, v2)])
+        context = DraftContext(d.layers, d.kv_heads, d.head_dim, step=8).append(keys, values).append(k2, v2)
+        self.assertEqual((context.length, context.capacity), (11, 16))
+        expected, _ = d.forward([3], [11], concatenated, 3)
+        got, _ = d.forward([3], [11], context, 3)
+        np.testing.assert_allclose(np.array(got.astype(mx.float32)), np.array(expected.astype(mx.float32)),
+                                   atol=1e-2)
+
+    def test_copy_is_not_changed_by_later_writes(self):
+        from opinel_telegraphe import DraftContext
+        context = DraftContext(1, 1, 2, step=4)
+        context.append([mx.ones((1, 2, 2))], [mx.ones((1, 2, 2))])
+        twin = context.copy()
+        context.append([mx.full((1, 2, 2), 5.0)], [mx.full((1, 2, 2), 5.0)])
+        self.assertEqual(twin.length, 2)
+        self.assertEqual(float(twin.keys[0][:, 2:4].sum()), 0.0)

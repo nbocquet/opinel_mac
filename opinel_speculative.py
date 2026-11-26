@@ -22,7 +22,7 @@ import time
 import mlx.core as mx
 import numpy as np
 
-from opinel_telegraphe import capture_aux
+from opinel_telegraphe import DraftContext, capture_aux
 from opinel_verify import verify_block
 
 _RECORDER = {"active": None}
@@ -153,11 +153,10 @@ class Speculator:
         logits, aux = self._forward(tokens, cache)
         k, v = self.drafter.context_kv(aux, start=start)
         if context is None:
-            context = (k, v)
-        else:
-            context = tuple([mx.concatenate([a, b], axis=1) for a, b in zip(old, new)]
-                            for old, new in zip(context, (k, v)))
-        mx.eval(logits, context)
+            d = self.drafter
+            context = DraftContext(d.layers, d.kv_heads, d.head_dim)
+        context.append(k, v)
+        mx.eval(logits, context.arrays())
         return logits, context
 
     def prefill(self, prompt, cache, context=None, start=0, on_prefix=None, chunk=2048):
@@ -211,7 +210,7 @@ class Speculator:
         stats = stats if stats is not None else {}
         stats.update(steps=0, accepted=[], kept=[], draft_seconds=0.0, verify_seconds=0.0)
         began = time.perf_counter()
-        anchor, (keys, values), last = self.prefill(prompt, cache, context, start, on_prefix)
+        anchor, context, last = self.prefill(prompt, cache, context, start, on_prefix)
         stats["prefill_seconds"] = time.perf_counter() - began
         if sampling:
             ids, probs = law(last[None])
@@ -223,7 +222,7 @@ class Speculator:
             return
         while produced < max_tokens:
             started = time.perf_counter()
-            drafts, log_q, candidates = self.drafter.draft([anchor], [position], (keys, values), self.steps,
+            drafts, log_q, candidates = self.drafter.draft([anchor], [position], context, self.steps,
                                                            temperature=temperature, with_candidates=True)
             drafted = time.perf_counter()
             block = [anchor] + [int(t) for t in drafts[0]]
@@ -247,10 +246,8 @@ class Speculator:
                     next_token = choice[accepted]
             keep = accepted + 1
             self.recorder.rollback(cache, keep, len(block))
-            k, v = self.drafter.context_kv(aux[:keep], start=position)
-            keys = [mx.concatenate([a, b], axis=1) for a, b in zip(keys, k)]
-            values = [mx.concatenate([a, b], axis=1) for a, b in zip(values, v)]
-            mx.eval(keys, values, [c.state for c in cache])
+            context.append(*self.drafter.context_kv(aux[:keep], start=position))
+            mx.eval(context.arrays(), [c.state for c in cache])
             position += keep
             anchor = next_token
             stats["steps"] += 1
