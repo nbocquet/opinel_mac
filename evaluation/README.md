@@ -135,7 +135,7 @@ Des réponses libres différentes ne suffisent pas à prouver un bug numérique.
 `scripts/check_logit_parity.py` applique la méthode de l'équipe Opinel
 (issue #1, §3 et §6) :
 
-1. `generate` : le backend testé continue en greedy, sur 256 tokens, 64 prompts
+1. `generate` : le backend testé continue en greedy, sur 256 tokens, 62 prompts
    variés. Ce sont les 44 cas des deux suites de fiabilité, les 16 prompts de
    `parity_prompts.json` et deux documents longs de 3000 et 4500 tokens, qui
    couvrent le préremplissage MLX par blocs de 2048 tokens et le noyau

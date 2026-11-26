@@ -128,13 +128,26 @@ Les sources inchangées et leur licence MIT sont dans `vendor/ovh_olala/` ;
 `UPSTREAM.json` fixe le commit `58083ca0ac4ca0654b508f74e1bdf7b6e0e173f4`
 et les empreintes des fichiers. Le serveur complet OVH n'est pas nécessaire.
 
-**État de validation :** l'environnement `.venv-mlx` est installé et la génération
-BF16 a été confirmée depuis le terminal du M5 : environ 45–46 tokens/s au décodage.
-Les 945 tenseurs exportés ont été comparés intégralement, sans différence,
-aux valeurs utilisées par le backend PyTorch. La session de développement ne
-peut pas initialiser Metal ; la conversion Q8 et sa validation restent à faire
-depuis le terminal local. Le contexte de 8192 tokens a été testé avec le vrai
-tokenizer ; une génération GPU utilisant toute cette fenêtre reste à mesurer.
+**État de validation (26 novembre 2026, M5, 24 Go) :**
+
+| Export | Décodage | Pic mémoire en chat | Accord top-1 | Écart top-5 | Erreurs franches |
+|---|---|---|---|---|---|
+| N°8 direct (`mlx-n8`) | 76–80 tokens/s | 7,9–9,1 Go | 98,7 % | 0,074 | 15 / 12 395 |
+| BF16 (`bf16-reference`) | 45–46 tokens/s | ≈ 14 Go de poids | 99,0 % | 0,060 | 10 / 12 650 |
+
+La parité est mesurée contre la référence PyTorch FP32 (experts INT8) sur
+62 prompts × 256 tokens, dont deux documents de 3000 et 4500 tokens, avec
+`OLALA_DETERMINISTIC=1`. Les deux exports font mieux que les repères de
+l'équipe Opinel (GPU : 97,7–97,9 % et 0,098–0,104 ; plancher bf16 CPU :
+97,9–98,2 % et 0,089–0,091), aussi sur les documents longs (N°8 : 98,0 % et
+0,065). N°8 reste légèrement derrière BF16, alors qu'il n'arrondit qu'une
+échelle par ligne. La précision du produit matriciel quantifié de MLX est la
+cause la plus probable ; l'écart reste faible. Le rejeu de la conversation
+Saint-Julien (`scripts/diagnose_n8.sh`) montre les mêmes erreurs factuelles
+avec les poids BF16 en greedy qu'avec N°8 : elles viennent du modèle, pas de
+la conversion. La conversion Q8 n'a pas été mesurée. Le contexte de 8192 tokens
+a été testé avec le vrai tokenizer ; une génération utilisant toute la
+fenêtre reste à mesurer.
 
 Pour essayer les poids BF16 déjà exportés avec le moteur MLX :
 
@@ -301,8 +314,8 @@ Ces premières mesures ne se comparent pas aux repères de l'équipe Opinel
 domine ; les deux « références » étaient en BF16 (la ligne « plancher bf16 »,
 pas une référence FP32) ; et le texte forcé ne couvrait que 25 positions
 proches du protocole. `scripts/check_logit_parity.py` suit désormais la
-méthode de l'équipe (voir `evaluation/README.md`) ; les nouvelles mesures
-restent à faire depuis le terminal du Mac.
+méthode de l'équipe (voir `evaluation/README.md`) ; ses résultats sont dans
+la section du backend MLX.
 
 **Limites.** Une seule exécution déterministe, sur 30 cas ciblés : ce n'est
 pas une mesure de fiabilité générale. Les réponses libres ont été jugées par
