@@ -560,8 +560,24 @@ Le gain est plus petit en boucle (0,5 ms par vérification) qu'au banc : la
 boucle évalue déjà le drafter et les caches entre deux vérifications. Les
 mesures se font machine au calme et sur secteur : sur batterie, ou pendant un
 inventaire logiciel (`ndtrack`, `flxfsscan`), le décodage normal tombe de 77 à
-43-62 tokens/s et la boucle, plus dépendante du CPU, encore davantage. Restent
-le drafter (5,7 ms à K = 3) et la part proportionnelle au nombre de tokens. Les réponses greedy divergent du décodage
+43-62 tokens/s et la boucle, plus dépendante du CPU, encore davantage.
+
+**Drafter.** Une passe à K = 3 coûte environ 5,4 ms : la tête 2 ms (233 Mo
+INT8 lus à environ 115 Go/s, déjà au plafond de bande passante et constante de 2
+à 5 lignes), les 5 couches 2,4 ms (126 Mo, limitées par les lancements de
+noyaux), les transitions 0,4 ms. Trois changements exacts (brouillons identiques
+à l'ancienne version) : `mx.compile` des parties de taille fixe de chaque
+couche, q/k/v et gate/up fusionnées en une matrice chacune, sélection des 16
+candidats sans copie négative des logits. Brouillon isolé : 6,3 → 5,6 ms ; dans
+la boucle, mesures alternées passe par passe : 5,7 → 5,2 ms. C'est 1,5 % d'une
+passe, sous le bruit d'un run à l'autre (×1,20 à K = 3 sur le dernier run, ×1,24
+sur le précédent). Une tête réduite aux tokens fréquents ne paierait pas : les
+64 000 premiers ids ne couvrent que 94 % des tokens d'un texte français (98,7 %
+en anglais), et chaque token hors liste casse la chaîne du brouillon.
+
+En résumé, la boucle greedy plafonne vers ×1,2 sur M5 : une vérification de 4
+tokens coûte encore près de deux pas de décodage (27 ms contre 14-15), et le
+drafter un peu plus d'un tiers de pas. Les réponses greedy divergent du décodage
 normal au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres
 noyaux sur un choix greedy.
 
@@ -581,7 +597,7 @@ mesurer :
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
 - Télégraphe (§5) : drafter, boucle greedy et vérification par les noyaux de décodage faits,
-  gain ×1,24 à K = 3 ; restent le coût du drafter, l'échantillonnage
+  gain ×1,2 à K = 3 ; restent l'échantillonnage
   par rejet et l'intégration au chat ;
 
 Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans

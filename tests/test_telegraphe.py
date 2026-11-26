@@ -46,6 +46,7 @@ def tiny_drafter(seed=0, layers=2, hidden=32, heads=4, kv_heads=2, head_dim=8, v
             f"injection.readouts.{i}.weight": w(transfer, hidden), f"injection.writes.{i}.weight": w(hidden, message),
         })
     d.w = weights
+    d.fuse_projections()
     d.embedding = w(vocab, hidden, scale=1.0)
     d.mask_embedding = w(hidden, scale=1.0)
     return d

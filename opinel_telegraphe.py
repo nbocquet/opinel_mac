@@ -127,6 +127,7 @@ class Telegraphe:
         self.target_head = target_head
         if target_head is not None:
             del self.w["lm_head.weight"]
+        self.fuse_projections()
         self.quantized = {}
         if quantize_bits:
             for name in list(self.w):
@@ -134,6 +135,17 @@ class Telegraphe:
                     self.quantized[name] = mx.quantize(self.w.pop(name), group_size=group_size, bits=quantize_bits)
             self.quantize_args = {"group_size": group_size, "bits": quantize_bits}
         mx.eval(self.w, self.quantized, self.mask_embedding, self.embedding)
+
+    def fuse_projections(self):
+        """One matmul for q / k / v and one for gate / up (fewer kernel launches). Rows are quantized
+        independently, so the fused weights quantize to exactly the separate ones. k_proj and v_proj
+        stay for context_kv."""
+        for i in range(self.layers):
+            attn, mlp = f"layers.{i}.self_attn.", f"layers.{i}.mlp."
+            self.w[attn + "qkv_proj.weight"] = mx.concatenate(
+                [self.w.pop(attn + "q_proj.weight"), self.w[attn + "k_proj.weight"], self.w[attn + "v_proj.weight"]])
+            self.w[mlp + "gate_up_proj.weight"] = mx.concatenate(
+                [self.w.pop(mlp + "gate_proj.weight"), self.w.pop(mlp + "up_proj.weight")])
 
     def p(self, name):
         return self.w[name]
@@ -243,36 +255,55 @@ class Telegraphe:
         offsets = mx.array(context_lengths)
         pre = x
         for i in range(self.layers):
-            prefix = f"layers.{i}."
-            residual = x
-            h = rms_norm(x, self.p(prefix + "input_layernorm.weight"), self.eps)
-            q = self.mm(h, prefix + "self_attn.q_proj.weight").reshape(B, n, self.heads, self.head_dim)
-            k = self.mm(h, prefix + "self_attn.k_proj.weight").reshape(B, n, self.kv_heads, self.head_dim)
-            v = self.mm(h, prefix + "self_attn.v_proj.weight").reshape(B, n, self.kv_heads, self.head_dim)
-            q = rms_norm(q, self.p(prefix + "self_attn.q_norm.weight"), self.eps).transpose(0, 2, 1, 3)
-            k = rms_norm(k, self.p(prefix + "self_attn.k_norm.weight"), self.eps).transpose(0, 2, 1, 3)
-            q = mx.fast.rope(q, self.head_dim, traditional=False, base=self.rope_theta, scale=1.0, offset=offsets)
-            k = mx.fast.rope(k, self.head_dim, traditional=False, base=self.rope_theta, scale=1.0, offset=offsets)
+            q, k, v = self._compiled("pre", i)(x, offsets)
             keys = mx.concatenate([mx.broadcast_to(keys_ctx[i][None], (B, *keys_ctx[i].shape)), k], axis=2)
-            values = mx.concatenate([mx.broadcast_to(values_ctx[i][None], (B, *values_ctx[i].shape)),
-                                     v.transpose(0, 2, 1, 3)], axis=2)
+            values = mx.concatenate([mx.broadcast_to(values_ctx[i][None], (B, *values_ctx[i].shape)), v], axis=2)
             out = mx.fast.scaled_dot_product_attention(q, keys, values, scale=self.head_dim ** -0.5, mask=mask)
-            out = out.transpose(0, 2, 1, 3).reshape(B, n, -1)
-            x = residual + self.mm(out, prefix + "self_attn.o_proj.weight")
-            residual = x
-            h = rms_norm(x, self.p(prefix + "post_attention_layernorm.weight"), self.eps)
-            gate = self.mm(h, prefix + "mlp.gate_proj.weight")
-            up = self.mm(h, prefix + "mlp.up_proj.weight")
-            x = residual + self.mm(gate * mx.sigmoid(gate) * up, prefix + "mlp.down_proj.weight")
-            pre = x
-            x = self.inject(i, pre, anchor_features)
+            x, pre = self._compiled("post", i)(x, out, anchor_features)
         return rms_norm(x, self.p("norm.weight"), self.eps), pre
+
+    def _layer_pre(self, i, x, offsets):
+        """Fixed-shape part of layer i before the attention: q (B, heads, n, d), k and v (B, kv, n, d)."""
+        B, n = x.shape[:2]
+        prefix = f"layers.{i}."
+        h = rms_norm(x, self.p(prefix + "input_layernorm.weight"), self.eps)
+        q_size, kv_size = self.heads * self.head_dim, self.kv_heads * self.head_dim
+        qkv = self.mm(h, prefix + "self_attn.qkv_proj.weight")
+        q = qkv[..., :q_size].reshape(B, n, self.heads, self.head_dim)
+        k = qkv[..., q_size:q_size + kv_size].reshape(B, n, self.kv_heads, self.head_dim)
+        v = qkv[..., q_size + kv_size:].reshape(B, n, self.kv_heads, self.head_dim)
+        q = rms_norm(q, self.p(prefix + "self_attn.q_norm.weight"), self.eps).transpose(0, 2, 1, 3)
+        k = rms_norm(k, self.p(prefix + "self_attn.k_norm.weight"), self.eps).transpose(0, 2, 1, 3)
+        q = mx.fast.rope(q, self.head_dim, traditional=False, base=self.rope_theta, scale=1.0, offset=offsets)
+        k = mx.fast.rope(k, self.head_dim, traditional=False, base=self.rope_theta, scale=1.0, offset=offsets)
+        return q, k, v.transpose(0, 2, 1, 3)
+
+    def _layer_post(self, i, x, out, anchor_features):
+        """Fixed-shape part of layer i after the attention: output projection, MLP, injection."""
+        B, n = x.shape[:2]
+        prefix = f"layers.{i}."
+        x = x + self.mm(out.transpose(0, 2, 1, 3).reshape(B, n, -1), prefix + "self_attn.o_proj.weight")
+        h = rms_norm(x, self.p(prefix + "post_attention_layernorm.weight"), self.eps)
+        gate, up = mx.split(self.mm(h, prefix + "mlp.gate_up_proj.weight"), 2, axis=-1)
+        pre = x + self.mm(gate * mx.sigmoid(gate) * up, prefix + "mlp.down_proj.weight")
+        return self.inject(i, pre, anchor_features), pre
+
+    def _compiled(self, part, i):
+        """mx.compile of a fixed-shape layer part (fuses its element-wise operations); plain when COMPILE is off."""
+        function = getattr(self, f"_layer_{part}")
+        if not COMPILE:
+            return lambda *args: function(i, *args)
+        cache = self.__dict__.setdefault("_compiled_parts", {})
+        if (part, i) not in cache:
+            cache[(part, i)] = mx.compile(lambda *args, _f=function, _i=i: _f(_i, *args))
+        return cache[(part, i)]
 
     # --- candidates and walk -----------------------------------------------------------
     def candidates(self, hidden):
         """Top-k candidate ids (B, steps, k) of the drafter's head at the mask positions."""
         logits = self.head_logits(hidden[:, 1:]).astype(mx.float32)
-        return mx.argpartition(-logits, kth=self.top_k - 1, axis=-1)[..., :self.top_k]
+        # the last top_k of an ascending partition: no negated copy of the vocabulary-wide logits
+        return mx.argpartition(logits, kth=logits.shape[-1] - self.top_k, axis=-1)[..., -self.top_k:]
 
     def transition_scores(self, candidate_ids, final_pre, anchors):
         """scores (B, steps, k_prev, k): exact fp32 last write with each candidate predecessor."""
@@ -323,6 +354,8 @@ class Telegraphe:
         mx.eval(candidate_ids, scores)
         return self.walk(candidate_ids, scores, temperature)
 
+
+COMPILE = True  # mx.compile the fixed-shape parts of the draft layers
 
 _SINKS = {}  # id(layer) -> list filled by the patched __call__ (MLX modules hold no plain attributes)
 
