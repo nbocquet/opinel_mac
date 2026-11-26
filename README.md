@@ -80,6 +80,7 @@ la réflexion, puis la réponse vient au fil de l'eau.
 
 | Dans le chat | Effet |
 |---|---|
+| `/lire <fichier> [question]` | envoyer tout un fichier texte, suivi d'une question (par défaut : le résumer) |
 | `/reset` | effacer l'historique |
 | `/quit` ou Ctrl-D | quitter |
 | Ctrl-C pendant une réponse | l'interrompre |
@@ -93,6 +94,10 @@ Options utiles :
 | `--temperature 0` | réponses déterministes (par défaut 0,8, top-p 0,9, top-k 40, comme la fiche du modèle) |
 | `--context-length N` | taille de la fenêtre de contexte, jusqu'à 32 768 tokens |
 | `--offline` | aucun accès réseau |
+
+Pour un long document, agrandir la fenêtre : `--context-length 32768`. Avec la
+fenêtre par défaut (11 264 tokens), il reste environ 7 000 tokens pour
+l'historique et les documents, soit une vingtaine de pages.
 
 Pour une seule question, sans chat :
 

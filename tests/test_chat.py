@@ -1,3 +1,5 @@
+from pathlib import Path
+import tempfile
 import contextlib
 import io
 from types import SimpleNamespace
@@ -159,6 +161,24 @@ class ChatTests(unittest.TestCase):
         self.assertEqual([m["role"] for m in histories[1]], ["user", "assistant", "user"])
         self.assertEqual(histories[2], [{"role": "user", "content": "Nouveau"}])
         self.assertIs(generated.call_args_list[0].args[0], generated.call_args_list[2].args[0])
+
+    def test_read_command_sends_the_whole_file_as_one_message(self):
+        histories = []
+
+        def reply(model, tokenizer, messages, args, **kwargs):
+            histories.append(list(messages))
+            return "ok", messages
+
+        with tempfile.TemporaryDirectory() as tmp:
+            document = Path(tmp) / "texte.txt"
+            document.write_text("Ligne un.\nLigne deux.\n", encoding="utf-8")
+            generated = self.run_session([f"/lire {document} Qui parle ?", "/lire", f"/lire {tmp}/absent.txt",
+                                          f"/lire {document}", "/quit"], reply)
+        self.assertEqual(generated.call_count, 2)
+        first = histories[0][0]["content"]
+        self.assertIn("Ligne un.\nLigne deux.", first)
+        self.assertTrue(first.endswith("Qui parle ?"))
+        self.assertTrue(histories[1][-1]["content"].endswith("Résume ce document en quelques points."))
 
     def test_failed_or_interrupted_turn_is_not_kept(self):
         histories = []

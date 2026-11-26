@@ -233,6 +233,22 @@ def load_speculator(model, steps, offline=False):
     return speculator
 
 
+def document_message(command):
+    """'/lire <fichier> [question]' -> one user message holding the whole file, then the question."""
+    rest = command[len("/lire"):].strip()
+    if not rest:
+        raise ValueError("Usage : /lire <fichier> [question]")
+    path, _, question = rest.partition(" ")
+    path = Path(path).expanduser()
+    if not path.is_file():
+        raise ValueError(f"Fichier introuvable : {path}")
+    text = path.read_text(encoding="utf-8", errors="replace").strip()
+    if not text:
+        raise ValueError(f"Fichier vide : {path}")
+    question = question.strip() or "Résume ce document en quelques points."
+    return f"Voici un document ({path.name}) :\n\n{text}\n\n{question}"
+
+
 def run_chat(model, tokenizer, args):
     messages = []
     prompt_cache = None
@@ -241,7 +257,8 @@ def run_chat(model, tokenizer, args):
         prompt_cache = PromptCache(model)
     context = getattr(args, "context_length", None)
     suffix = f" Contexte : {context} tokens." if context is not None else ""
-    print(f"Opinel est prêt.{suffix} /reset : effacer l'historique · /quit : quitter")
+    print(f"Opinel est prêt.{suffix} /lire <fichier> [question] : lire un document · /reset : effacer "
+          "l'historique · /quit : quitter")
     while True:
         try:
             prompt = input("Vous > ").strip()
@@ -258,8 +275,15 @@ def run_chat(model, tokenizer, args):
                 prompt_cache.clear()
             print("Historique effacé. Le modèle reste chargé.")
             continue
-        if prompt.startswith("/"):
-            print("Commandes disponibles : /reset, /quit")
+        if prompt == "/lire" or prompt.startswith("/lire "):
+            try:
+                prompt = document_message(prompt)
+            except (ValueError, OSError) as error:
+                print(error)
+                continue
+            print(f"Document chargé : {len(prompt)} caractères.", file=sys.stderr)
+        elif prompt.startswith("/"):
+            print("Commandes disponibles : /lire <fichier> [question], /reset, /quit")
             continue
         candidate = messages + [{"role": "user", "content": prompt}]
         try:
