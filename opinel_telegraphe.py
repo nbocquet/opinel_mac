@@ -332,8 +332,12 @@ def capture_aux(model):
 
     Returns a list that each forward fills with (B, L, 1536) arrays, in layer order;
     the caller clears it. The fused single-token decode (metal.decode) bypasses the
-    layers: only multi-token forwards are captured.
+    layers: only multi-token forwards are captured. Calling it again for the same model
+    returns the same list (one list per model, shared by its users).
     """
+    existing = _SINKS.get(id(model.model.layers[TARGET_LAYERS[0]]))
+    if existing is not None:
+        return existing
     records = []
     for index in TARGET_LAYERS:
         layer = model.model.layers[index]

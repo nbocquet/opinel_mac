@@ -39,6 +39,10 @@ def main():
     parser.add_argument("--steps", type=int, nargs="+", default=[3, 5, 7], help="Valeurs de K")
     parser.add_argument("--own-head", action="store_true", help="Tête bf16 du drafter au lieu de la tête INT8 de la cible")
     parser.add_argument("--bf16-layers", action="store_true", help="Couches du drafter en bf16 au lieu de 8 bits")
+    parser.add_argument("--prefill-verify", action="store_true",
+                        help="Vérification par le chemin de préremplissage d'OVH au lieu des noyaux de décodage")
+    parser.add_argument("--mamba-prefill", action="store_true",
+                        help="Mamba-3 en un seul m3_prefill par bloc au lieu d'un pas de décodage par token")
     parser.add_argument("--rollback-check", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -52,6 +56,8 @@ def main():
     from opinel_mlx import load_mlx_model
     from opinel_speculative import Speculator
     from opinel_telegraphe import Telegraphe, prepare
+    import opinel_verify
+    opinel_verify.MAMBA_BY_TOKEN = not args.mamba_prefill
 
     if not (args.drafter_dir / "mask_embedding.npy").exists():
         prepare(args.drafter_dir)
@@ -93,22 +99,27 @@ def main():
         return n
 
     encoded = [encode(text) for text in prompts]
+    # Plain and speculative runs alternate prompt by prompt: a Mac that heats up (or changes power
+    # source) during the run then slows every variant alike instead of the last ones measured.
+    speculators = {steps: Speculator(model, drafter, steps=steps, decode_kernels=not args.prefill_verify)
+                   for steps in args.steps}
     plain(encoded[0])  # warm-up
+    for speculator in speculators.values():
+        speculative(speculator, encoded[0])  # warm-up of each block length
     baseline = []
+    runs = {steps: [] for steps in args.steps}
     for prompt in encoded:
-        tokens, seconds = plain(prompt)
-        baseline.append((tokens, seconds))
+        baseline.append(plain(prompt))
+        for steps, speculator in speculators.items():
+            runs[steps].append(speculative(speculator, prompt))
     plain_rate = sum(len(t) - 1 for t, _ in baseline) / sum(s for _, s in baseline)
-    print(f"Décodage normal : {plain_rate:.1f} tokens/s ({len(encoded)} prompts, jusqu'à {args.tokens} tokens).",
-          flush=True)
+    print(f"Décodage normal : {plain_rate:.1f} tokens/s ({len(encoded)} prompts, jusqu'à {args.tokens} tokens, "
+          f"mesures alternées).", flush=True)
 
-    report = {"plain_tokens_per_second": plain_rate, "speculative": {}}
+    report = {"plain_tokens_per_second": plain_rate, "interleaved": True, "speculative": {}}
     for steps in args.steps:
-        speculator = Speculator(model, drafter, steps=steps)
-        speculative(speculator, encoded[0])  # warm-up of this block length
         produced, seconds, kept, draft_s, verify_s, agreements = 0, 0.0, [], 0.0, 0.0, []
-        for prompt, (reference, _) in zip(encoded, baseline):
-            tokens, elapsed, stats = speculative(speculator, prompt)
+        for (tokens, elapsed, stats), (reference, _) in zip(runs[steps], baseline):
             produced += len(tokens) - 1
             seconds += elapsed
             kept += stats["kept"]

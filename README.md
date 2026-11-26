@@ -502,20 +502,51 @@ boucle greedy donne ×1,15 à K = 3 (88,5 tokens/s, 2,73 tokens par passe,
 5,5 + 25,2 ms) et ×0,99 à K = 5 ; le cache complet reste à mesurer sur les
 longs contextes, où le factorisé est choisi sur M5.
 
-**Une vérification fusionnée n'y changerait presque rien.** Le décodage
-fusionné d'OVH sur T séquences indépendantes (son batching, `--rows`) coûte
-14,1 / 17,2 / 26,5 / 31,8 / 40,0 ms pour T = 1 / 2 / 4 / 5 / 8 : à 4 tokens,
-autant que le chemin générique (26,6 ms). Chaque token de plus lit ses 6 experts
-routés à chaque couche, soit 3 à 4,5 ms : le surcoût du chemin générique
-n'existe vraiment qu'à 2 tokens. Une passe de vérification qui reprend les
-noyaux de `metal.decode` (lignes = tokens du bloc, Mamba-3 par `m3_prefill`,
-attention générique) donne les mêmes logits mais pas plus vite : 23,3 ms à
-2 tokens, 30,1 ms à 4. Les petits K ne compensent pas : ×0,86 à K = 1 et ×1,02 à
-K = 2 (cache complet). Sur ce MoE et cette bande passante, le décodage spéculatif
-plafonne vers ×1,15-1,3 ; le reste à gagner est surtout dans le drafter
-(5,5 ms par passe, environ un tiers d'un pas de décodage). Les réponses greedy divergent du décodage normal
-au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres noyaux
-sur un choix greedy.
+**Vérification par les noyaux de décodage** (`opinel_verify.py`, après la réponse
+de l'équipe dans l'issue #1). Le décodage fusionné d'OVH sur T séquences
+indépendantes (`scripts/profile_verify.py --rows`) coûte 14,1 / 17,2 / 26,5 /
+40,0 ms pour T = 1 / 2 / 4 / 8. Profil par noyau, avec une barrière après
+chacun : de T = 1 à 4, le MoE fusionné passe de 7,0 à 9,9 ms (environ 1 ms par
+token, les experts lus en plus), mais les projections denses (`gemv`) de 26 à
+48 ms : le GEMV relit les poids pour chaque ligne, alors que
+`mx.quantized_matmul` coûte autant pour 1 et pour 4 lignes (2,86 et 2,98 ms pour
+36 matrices 7328 × 1536). La passe de vérification prend donc les L tokens du
+bloc comme lignes du décodage, avec :
+
+- les projections denses par `mx.quantized_matmul` dès 3 lignes, le MoE fusionné
+  jusqu'à 8 lignes ;
+- Mamba-3 par un seul `m3_prefill` séquentiel pour le bloc (option : un pas de
+  décodage par token, dont les états intermédiaires servent directement au
+  retour arrière) ;
+- l'attention par les noyaux de décodage, un token après l'autre (causale par
+  construction, cache écrit sur place).
+
+| Tokens vérifiés | 2 | 3 | 4 | 6 | 8 |
+|---|---|---|---|---|---|
+| chemin générique (ms) | 24,0 | 25,8 | 25,7 | 32,6 | 35,9 |
+| noyaux de décodage (ms) | 18,4 | 20,6 | 21,6 | 30,4 | 36,8 |
+
+Mêmes top-1 que le chemin générique (100 %), écart top-5 0,02 ; après un retour
+arrière, la suite est celle d'une passe directe sur les tokens gardés. Ce que
+chaque partie coûte à 4 tokens : l'attention générique 7,8 ms pour ses 7
+couches (le gros du coût fixe), Mamba-3 en pas successifs 7,2 ms (environ
+1,8 ms par token), autant ou plus qu'un `m3_prefill` par bloc.
+
+Boucle greedy, mesures alternées prompt par prompt (le Mac chauffe pendant les
+25 minutes du run et ralentit toutes les variantes ; mesurées l'une après
+l'autre, les dernières paraissaient plus lentes) :
+
+| Cache d'attention | K = 2 | K = 3 | K = 4 |
+|---|---|---|---|
+| factorisé (par défaut sur M5) | ×1,16 | **×1,19** | ×1,15 |
+| complet (`OLALA_TPA_CACHE=full`) | ×1,08 | ×1,08 | ×1,06 |
+
+À K = 3, une passe coûte le drafter (6,4 ms) plus la vérification (30,4 ms en
+boucle, machine chaude). Restent : environ 2 ms de construction du graphe côté
+CPU à chaque vérification, le drafter qui grossit avec K, et la part
+proportionnelle au nombre de tokens. Les réponses greedy divergent du décodage
+normal au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres
+noyaux sur un choix greedy.
 
 ## Pistes de l'issue #1 non traitées
 
@@ -532,9 +563,9 @@ mesurer :
   reproduit le fork, à valider par un test d'aiguille (§12) ;
 - décodage PyTorch MPS sans synchronisation par couche (`moe_decode`, §9) :
   PyTorch reste surtout la référence CPU ;
-- Télégraphe (§5) : drafter et boucle greedy faits, gain ×1,04, ×1,15 avec `OLALA_TPA_CACHE=full` ;
-  une vérification fusionnée ne ferait pas mieux (les experts de chaque token dominent, voir plus
-  haut) ; restent le coût du drafter, l'échantillonnage par rejet et l'intégration au chat ;
+- Télégraphe (§5) : drafter, boucle greedy et vérification par les noyaux de décodage faits,
+  gain ×1,19 à K = 3 ; restent la construction du graphe, le coût du drafter, l'échantillonnage
+  par rejet et l'intégration au chat ;
 
 Les demandes explicites de tutoiement ou de vouvoiement ne figurent pas dans
 cette liste : c'est une limite du modèle, que le moteur ne corrige pas.

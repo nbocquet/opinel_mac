@@ -22,6 +22,7 @@ import time
 import mlx.core as mx
 
 from opinel_telegraphe import capture_aux
+from opinel_verify import verify_block
 
 _RECORDER = {"active": None}
 
@@ -84,7 +85,11 @@ class VerifyRecorder:
         for index, layer in enumerate(self.layers):
             mixer = layer.mixer
             if layer.layer_type == "M":
-                state, out = self.mamba[id(mixer)]
+                entry = self.mamba[id(mixer)]
+                if entry[0] == "states":  # opinel_verify: the state after each token is already there
+                    cache[index][0] = entry[1][keep - 1]
+                    continue
+                state, out = entry
                 if state is None:
                     state = mx.zeros((out.shape[0], mixer.H, mixer.P * mixer.N + mixer.R * mixer.N + mixer.P
                                       + mixer.A), mx.float32)
@@ -102,8 +107,10 @@ class VerifyRecorder:
 class Speculator:
     """Greedy speculative generation of the MLX target with a Télégraphe drafter."""
 
-    def __init__(self, model, drafter, steps=3):
+    def __init__(self, model, drafter, steps=3, decode_kernels=True):
         self.model, self.drafter, self.steps = model, drafter, steps
+        # verify through the decode kernels of the OVH module (opinel_verify) rather than its prefill path
+        self.decode_kernels = decode_kernels and steps + 1 <= 8
         self.records = capture_aux(model)
         self.recorder = VerifyRecorder(model)
 
@@ -145,7 +152,10 @@ class Speculator:
             drafted = time.perf_counter()
             block = [anchor] + [int(t) for t in drafts[0]]
             with self.recorder:
-                logits, aux = self._forward(block, cache)
+                if self.decode_kernels:
+                    logits, aux = verify_block(self.model, block, cache, recorder=self.recorder)
+                else:
+                    logits, aux = self._forward(block, cache)
                 choice = mx.argmax(logits, axis=-1)
                 mx.eval(choice, aux)
             choice = choice.tolist()
