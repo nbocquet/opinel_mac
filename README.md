@@ -315,7 +315,11 @@ Cas qui échouent au moins une fois :
 
 **Les demandes de tutoiement échouent de façon stable**, quels que soient le
 moteur, les kernels, le raisonnement (`low` ou `medium`) ou l'échantillonnage.
-C'est un défaut du modèle lui-même, pas du portage Mac. Le passage au
+C'est un défaut du modèle lui-même, pas du portage Mac : l'équipe Opinel l'a
+confirmé dans l'[issue #1](../../issues/1), l'échec existant déjà dans le
+modèle d'origine. **Le moteur ne le corrige donc pas volontairement** (ni
+règles de détection, ni réponse fixe) ; ces cas restent dans les suites comme
+échecs connus du modèle. Le passage au
 vouvoiement est instable, sans échec systématique. Les cas d'incertitude
 (ne pas inventer un fichier, un prénom, une citation, un prix) réussissent
 dans toutes les exécutions. Le preset `ovh` ne fait pas mieux que `baseline`
