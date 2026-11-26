@@ -336,6 +336,8 @@ def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_histo
               f"Préremplissage : {len(tokens)} tokens{reuse}, {last.prompt_tokens} calculés à "
               f"{last.prompt_tps:.0f} tokens/s. Décodage : {last.generation_tps:.2f} tokens/s{per_step}. "
               f"Pic mémoire : {last.peak_memory:.1f} Go.", file=sys.stderr)
+        args.last_turn = {"tokens": last.generation_tokens, "seconds": elapsed,
+                          "decode_tokens_per_second": last.generation_tps}
         return answer, retained
     extra, reused, remaining = {}, 0, tokens
     if prompt_cache is not None:
@@ -358,4 +360,6 @@ def generate_turn_mlx(model, tokenizer, messages, args, stream=False, trim_histo
           f"{len(remaining)} calculés à {last.prompt_tps:.0f} tokens/s. "
           f"Décodage : {last.generation_tps:.2f} tokens/s. "
           f"Pic mémoire : {last.peak_memory:.1f} Go.", file=sys.stderr)
+    args.last_turn = {"tokens": last.generation_tokens, "seconds": elapsed,
+                      "decode_tokens_per_second": last.generation_tps}
     return answer, retained

@@ -600,6 +600,16 @@ alternées) :
 
 L'acceptation reste proche du greedy (2,61 contre 2,67 à K = 3).
 
+**Dans le chat** (`scripts/replay_conversation.py speed` : conversation
+Saint-Julien, 9 tours, réflexion low, 0,8 / 0,9 / 40, tours alternés entre chat
+normal et `--speculatif`, chaque variante avec son historique et son cache de
+prompt) : 73,4 tokens/s contre 67,2, préremplissage compris, soit **×1,09** ;
+décodage médian 81,3 contre 75,8 tokens/s. Le gain fond avec la longueur du
+contexte : ×1,13-1,24 sur les premiers tours, nul ou négatif aux tours 7 à 9
+(3 000 à 5 000 tokens de contexte). Suspects : l'attention de la vérification
+lit le cache une fois par token du bloc, et le contexte du drafter est recopié
+à chaque passe.
+
 En résumé, la boucle greedy plafonne vers ×1,2 sur M5 : une vérification de 4
 tokens coûte encore près de deux pas de décodage (27 ms contre 14-15), et le
 drafter un peu plus d'un tiers de pas. Les réponses greedy divergent du décodage

@@ -74,6 +74,53 @@ def run(args):
     return 0
 
 
+def speed(args):
+    """Plain chat against --speculatif on the same conversation, turn by turn in alternation: a Mac
+    that heats up slows both alike. Each variant keeps its own history and prompt cache."""
+    import mlx.core as mx
+    from opinel_mac import configure_environment, generate_turn, load_speculator, parse_args
+    from opinel_mlx import PromptCache, load_mlx_model
+
+    configure_environment()
+    conversation = json.loads(args.conversation.read_text())
+    model, tokenizer = load_mlx_model(args.model_dir, args.device)
+    mx.random.seed(args.seed)
+    base = ["chat", "--backend", "mlx", "--temperature", str(args.temperature),
+            "--reasoning-effort", args.reasoning_effort]
+    variants = {"normal": parse_args(base), "spéculatif": parse_args(base + ["--speculatif"])}
+    variants["spéculatif"].speculator = load_speculator(model, variants["spéculatif"].speculatif)
+    caches = {name: PromptCache(model) for name in variants}
+    histories = {name: [] for name in variants}
+    totals = {name: {"tokens": 0, "seconds": 0.0, "decode": []} for name in variants}
+    for number, text in enumerate(conversation["messages"], 1):
+        for name, settings in variants.items():
+            candidate = histories[name] + [{"role": "user", "content": text}]
+            try:
+                answer, retained = generate_turn(model, tokenizer, candidate, settings, trim_history=True,
+                                                 prompt_cache=caches[name])
+                histories[name] = retained + [{"role": "assistant", "content": answer}]
+            except (ValueError, RuntimeError) as failure:
+                print(f"[{name}] tour {number} : échec ({failure})", flush=True)
+                continue
+            turn = settings.last_turn
+            totals[name]["tokens"] += turn["tokens"]
+            totals[name]["seconds"] += turn["seconds"]
+            totals[name]["decode"].append(turn["decode_tokens_per_second"])
+            print(f"[{name}] tour {number} : {turn['tokens']} tokens en {turn['seconds']:.1f} s, "
+                  f"décodage {turn['decode_tokens_per_second']:.1f} tokens/s", flush=True)
+    rates = {name: total["tokens"] / total["seconds"] for name, total in totals.items()}
+    for name, total in totals.items():
+        print(f"{name:11} : {total['tokens']} tokens en {total['seconds']:.1f} s, {rates[name]:.1f} tokens/s "
+              f"(préremplissage compris), décodage médian {sorted(total['decode'])[len(total['decode']) // 2]:.1f} "
+              f"tokens/s")
+    print(f"Gain du chat spéculatif : ×{rates['spéculatif'] / rates['normal']:.2f}")
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps({"temperature": args.temperature, "totals": totals,
+                                           "tokens_per_second": rates}, ensure_ascii=False, indent=2) + "\n")
+    return 0
+
+
 def compare(args):
     reports = [json.loads(path.read_text()) for path in args.reports]
     expected = reports[0].get("expected")
@@ -108,8 +155,16 @@ def main():
     replay_parser.add_argument("--output", type=Path, required=True)
     comparison = commands.add_parser("compare")
     comparison.add_argument("reports", type=Path, nargs="+")
+    timing = commands.add_parser("speed", help="Chat normal contre --speculatif, tours alternés")
+    timing.add_argument("--model-dir", type=Path, default=ROOT / "models" / "opinel-n8-mlx-n8")
+    timing.add_argument("--temperature", type=float, default=0.8)
+    timing.add_argument("--reasoning-effort", choices=["low", "medium", "high"], default="low")
+    timing.add_argument("--seed", type=int, default=0)
+    timing.add_argument("--device", choices=["mps", "cpu"], default="mps")
+    timing.add_argument("--conversation", type=Path, default=DEFAULT_CONVERSATION)
+    timing.add_argument("--output", type=Path)
     args = parser.parse_args()
-    return run(args) if args.command == "run" else compare(args)
+    return {"run": run, "compare": compare, "speed": speed}[args.command](args)
 
 
 if __name__ == "__main__":
