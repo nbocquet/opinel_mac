@@ -16,14 +16,17 @@ def validate_provenance(folder):
         raise ValueError("Poids Opinel MLX absents : exécuter ./opinel convert-mlx depuis le terminal local.")
     manifest = json.loads(path.read_text())
     if (manifest.get("source_repository") != MODEL or not manifest.get("verified_tensors")
-            or manifest.get("format") not in ("bf16-reference", "mlx-q8")):
+            or manifest.get("format") not in ("bf16-reference", "mlx-q8", "mlx-n8")):
         raise ValueError("Le checkpoint n'est pas un export Opinel vérifié.")
     return manifest
 
 
 def default_folder():
-    quantized = ROOT / "models" / "opinel-n8-mlx-q8"
-    return quantized if quantized.exists() else ROOT / "models" / "opinel-n8-mlx-bf16"
+    """Direct N8 first, then the Q8 requantization, then the BF16 reference."""
+    for name in ("opinel-n8-mlx-n8", "opinel-n8-mlx-q8"):
+        if (ROOT / "models" / name).exists():
+            return ROOT / "models" / name
+    return ROOT / "models" / "opinel-n8-mlx-bf16"
 
 
 def load_mlx_model(folder, device):

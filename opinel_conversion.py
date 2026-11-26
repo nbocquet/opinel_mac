@@ -148,13 +148,22 @@ def export_reference(source, destination, shard_bytes=512 * 1024 ** 2):
 
 def run_conversion(args):
     source = args.model_dir or ROOT / "models" / "opinel-n8"
+    python = ROOT / ".venv-mlx" / "bin" / "python"
+    if args.recipe == "n8" and not args.export_only:
+        # Direct transcription: no BF16 export, no requantization (issue #1, §1).
+        if not python.exists():
+            raise ValueError("Installer l'environnement MLX selon README.md.")
+        output = args.output_dir or ROOT / "models" / "opinel-n8-mlx-n8"
+        return subprocess.run([
+            str(python), str(ROOT / "scripts" / "convert_mlx_n8.py"),
+            "--source", str(source), "--output", str(output),
+        ], check=False).returncode
     reference = ROOT / "models" / "opinel-n8-mlx-bf16"
     if args.recipe == "bf16" and args.output_dir:
         reference = args.output_dir
     reference = export_reference(source, reference)
     if args.export_only or args.recipe == "bf16":
         return 0
-    python = ROOT / ".venv-mlx" / "bin" / "python"
     if not python.exists():
         raise ValueError("Installer l'environnement MLX selon README.md ; l'export BF16 est prêt.")
     output = args.output_dir or ROOT / "models" / "opinel-n8-mlx-q8"

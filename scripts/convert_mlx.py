@@ -37,6 +37,9 @@ def main():
     def predicate(path, module):
         if not hasattr(module, "to_quantized") or not quant_predicate(path, module):
             return False
+        # N8 keeps the embedding in BF16; one row per token costs no bandwidth (issue #1, §7).
+        if path.endswith("embedding"):
+            return False
         return {"bits": 8, "group_size": 64, "mode": "affine"}
 
     output.parent.mkdir(parents=True, exist_ok=True)

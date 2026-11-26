@@ -389,7 +389,9 @@ def parse_args(argv=None):
                         help="Consignes développeur ajoutées au template (expérimental)")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--model-dir", type=Path, help="Checkpoint local déjà téléchargé")
-    parser.add_argument("--recipe", choices=["bf16", "q8"], default="q8", help="Conversion MLX")
+    parser.add_argument("--recipe", choices=["n8", "q8", "bf16"], default="n8",
+                        help="Conversion MLX : n8 transcrit N8 sans requantification (défaut), "
+                             "q8 requantifie l'export BF16 (comparaison), bf16 exporte seulement")
     parser.add_argument("--output-dir", type=Path, help="Dossier de sortie de la conversion")
     parser.add_argument("--export-only", action="store_true", help="Exporter et vérifier le BF16 sans initialiser MLX")
     args = parser.parse_args(argv)
