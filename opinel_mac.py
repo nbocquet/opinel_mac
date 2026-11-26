@@ -225,8 +225,12 @@ def load_speculator(model, steps, offline=False):
         prepare(DEFAULT_FOLDER)
     drafter = Telegraphe(DEFAULT_FOLDER, embedding=model.model.embedding.weight, target_head=model.lm_head,
                          quantize_bits=8)
-    print(f"Décodage spéculatif Télégraphe : {steps} tokens proposés par passe.", file=sys.stderr)
-    return Speculator(model, drafter, steps=steps)
+    speculator = Speculator(model, drafter, steps=steps)
+    path = "noyaux de décodage" if speculator.decode_kernels else "chemin de préremplissage"
+    timings = ", ".join(f"{name} {value:.1f} ms" for name, value in (speculator.timings or {}).items())
+    print(f"Décodage spéculatif Télégraphe : {steps} tokens proposés par passe, vérification par {path}"
+          f"{f' ({timings})' if timings else ''}.", file=sys.stderr)
+    return speculator
 
 
 def run_chat(model, tokenizer, args):

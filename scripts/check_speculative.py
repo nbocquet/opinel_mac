@@ -40,8 +40,9 @@ def main():
     parser.add_argument("--steps", type=int, nargs="+", default=[3, 5, 7], help="Valeurs de K")
     parser.add_argument("--own-head", action="store_true", help="Tête bf16 du drafter au lieu de la tête INT8 de la cible")
     parser.add_argument("--bf16-layers", action="store_true", help="Couches du drafter en bf16 au lieu de 8 bits")
-    parser.add_argument("--prefill-verify", action="store_true",
-                        help="Vérification par le chemin de préremplissage d'OVH au lieu des noyaux de décodage")
+    parser.add_argument("--verify", choices=["auto", "decode", "prefill"], default="auto",
+                        help="Chemin de vérification : noyaux de décodage (opinel_verify), chemin de préremplissage "
+                             "d'OVH, ou auto (le plus rapide sur cette machine, chronométré au chargement)")
     parser.add_argument("--mamba-by-token", action="store_true",
                         help="Mamba-3 par un pas de décodage par token au lieu d'un seul m3_prefill par bloc")
     parser.add_argument("--layers-per-submit", type=int, nargs="+",
@@ -115,8 +116,14 @@ def main():
     # source) during the run then slows every variant alike instead of the last ones measured.
     submits = args.layers_per_submit or [None]
     variants = [(steps, submit) for steps in args.steps for submit in submits]
-    speculators = {variant: Speculator(model, drafter, steps=variant[0], decode_kernels=not args.prefill_verify,
+    verify = {"auto": "auto", "decode": True, "prefill": False}[args.verify]
+    speculators = {variant: Speculator(model, drafter, steps=variant[0], decode_kernels=verify,
                                        layers_per_submit=variant[1]) for variant in variants}
+    for (steps, _), speculator in speculators.items():
+        path = "noyaux de décodage" if speculator.decode_kernels else "chemin de préremplissage"
+        timing = ("" if speculator.timings is None else " (" + ", ".join(
+            f"{name} {value:.1f} ms" for name, value in speculator.timings.items()) + ")")
+        print(f"K = {steps} : vérification par {path}{timing}", flush=True)
     plain(encoded[0])  # warm-up
     for speculator in speculators.values():
         speculative(speculator, encoded[0])  # warm-up of each block length
@@ -143,7 +150,8 @@ def main():
             verify_s += stats["verify_seconds"]
             agreements.append(agree(tokens, reference) / max(1, min(len(tokens), len(reference))))
         rate = produced / seconds
-        row = {"tokens_per_second": rate, "speedup": rate / plain_rate, "tokens_per_step": float(np.mean(kept)),
+        row = {"verify_path": "decode" if speculators[variant].decode_kernels else "prefill",
+               "verify_calibration_ms": speculators[variant].timings, "tokens_per_second": rate, "speedup": rate / plain_rate, "tokens_per_step": float(np.mean(kept)),
                "draft_ms": 1000 * draft_s / len(kept), "verify_ms": 1000 * verify_s / len(kept),
                "identical_prefix_median": statistics.median(agreements)}
         report["speculative"][str(steps) if submit is None else f"{steps}/{submit}"] = row

@@ -133,13 +133,49 @@ def rejection_step(drafts, candidate_ids, log_q, law_ids, law_probs, rng):
 class Speculator:
     """Greedy speculative generation of the MLX target with a Télégraphe drafter."""
 
-    def __init__(self, model, drafter, steps=3, decode_kernels=True, layers_per_submit=None):
+    def __init__(self, model, drafter, steps=3, decode_kernels="auto", layers_per_submit=None):
+        """decode_kernels: verify through the decode kernels of the OVH module (opinel_verify, True) or its
+        layer-by-layer prefill path (False); "auto" times both on this machine and keeps the faster
+        (the decode kernels win on M5, the prefill path on M4)."""
         self.model, self.drafter, self.steps = model, drafter, steps
         self.layers_per_submit = layers_per_submit
-        # verify through the decode kernels of the OVH module (opinel_verify) rather than its prefill path
-        self.decode_kernels = decode_kernels and steps + 1 <= 8
+        self.timings = None
+        if steps + 1 > 8:
+            decode_kernels = False
         self.records = capture_aux(model)
         self.recorder = VerifyRecorder(model)
+        self.decode_kernels = self.calibrate() if decode_kernels == "auto" else bool(decode_kernels)
+
+    def calibrate(self, context=1024, repeats=12):
+        """Time one verify of K + 1 tokens both ways after a context-token prompt; True if the decode
+        kernels are faster. Each verify restarts from a copy of the same cache (about 2 s in all)."""
+        import copy
+        import statistics
+
+        from mlx_lm.models.cache import make_prompt_cache
+
+        rng = np.random.default_rng(0)
+        vocab = self.model.model.embedding.weight.shape[0]
+        prompt = rng.integers(1000, min(vocab, 100000), size=context + self.steps + 1).tolist()
+        base = make_prompt_cache(self.model)
+        for start in range(0, context, 512):
+            self.model(mx.array(prompt[start:min(start + 512, context)])[None], cache=base)
+            mx.eval([c.state for c in base])
+        block = prompt[context:]
+        paths = {"noyaux de décodage": lambda c: verify_block(self.model, block, c,
+                                                               layers_per_submit=self.layers_per_submit),
+                 "chemin de préremplissage": lambda c: self._forward(block, c)}
+        times = {name: [] for name in paths}
+        for repeat in range(repeats + 2):
+            for name, run in paths.items():
+                work = copy.deepcopy(base)
+                mx.eval([c.state for c in work])
+                started = time.perf_counter()
+                mx.eval(run(work))
+                if repeat >= 2:
+                    times[name].append(time.perf_counter() - started)
+        self.timings = {name: 1000 * statistics.median(values) for name, values in times.items()}
+        return self.timings["noyaux de décodage"] <= self.timings["chemin de préremplissage"]
 
     def _forward(self, tokens, cache):
         self.records.clear()

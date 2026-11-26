@@ -640,6 +640,21 @@ de quelques pourcents (×1,12 au run précédent). Les tours gagnent quand le
 drafter garde au moins 2,4 tokens par passe et perdent légèrement sous 2,2,
 dans les tours longs.
 
+**Sur M4** (Apple M4, macOS 27.2.1, commit `d64826a`), le meilleur chemin de
+vérification s'inverse. Le chemin générique d'OVH n'y a presque pas de coût
+fixe (4 tokens en 27,9 ms contre 18,7 ms pour un pas de décodage, ×1,49 contre
+×1,8 sur M5), alors que le décodage fusionné passe mal à plusieurs lignes
+(37,7 ms à 4 lignes, 81 ms à 5) et que l'attention token par token relit le
+cache complet (le cache factorisé, choisi sur M5, sert les unités matricielles
+de cette puce). Greedy K = 3 : ×0,95 par les noyaux de décodage (vérification
+39,0 ms), **×1,25** par le chemin de préremplissage (29,6 ms) ; chat
+Saint-Julien avec les noyaux de décodage : ×0,95. Le `Speculator` choisit donc
+désormais le chemin au chargement (`decode_kernels="auto"`) : il chronomètre une
+vérification de K + 1 tokens par chaque chemin après un contexte de 1 024 tokens
+(environ 2 s) et garde le plus rapide ; `check_speculative.py --verify
+decode|prefill` force un chemin. Sur M5 : noyaux de décodage, 19,2 contre
+25,4 ms à K = 2.
+
 En résumé, la boucle greedy plafonne vers ×1,2 sur M5 : une vérification de 4
 tokens coûte encore près de deux pas de décodage (27 ms contre 14-15), et le
 drafter un peu plus d'un tiers de pas. Les réponses greedy divergent du décodage
