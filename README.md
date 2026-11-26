@@ -1,12 +1,21 @@
 # Opinel sur Mac Apple Silicon
 
-Faire tourner **Olala v1.0 mini 7A1B Opinel N°8**, un modèle de langue français,
-en local sur un Mac Apple Silicon, sur le GPU, sans serveur ni connexion après
-l'installation.
+*[English version](README.en.md)*
 
-Le moteur réutilise le module Olala d'OVH pour MLX/Metal et charge les poids
-N°8 tels quels, sans les requantifier. Le décodage spéculatif Télégraphe, le
-drafter de l'équipe Opinel, accélère encore la génération.
+Faire tourner **[Olala v1.0 mini 7A1B Opinel N°8](https://huggingface.co/maurienne-ai/Olala-v1.0-mini-7A1B-Opinel-N8)**,
+un modèle de langue français, en local sur un Mac Apple Silicon, sur le GPU,
+sans serveur ni connexion après l'installation.
+
+Olala v1.0 mini 7A1B est un modèle hybride (couches Mamba-3 et attention, avec
+un mélange d'experts) : 7 milliards de paramètres au total, environ 1 milliard
+actifs par token. Opinel N°8 en est la version 8 bits (INT8) publiée par
+l'équipe Opinel. Son moteur officiel, un fork de vLLM, demande CUDA : il ne
+tourne pas tel quel sur Mac.
+
+**Ce que ce projet apporte :** les poids INT8 de N°8 sont chargés dans MLX
+**tels quels, sans les requantifier**, et Télégraphe, le drafter de décodage
+spéculatif de l'équipe, est porté en MLX avec un retour arrière exact. Le
+moteur réutilise le module Olala d'OVH pour MLX/Metal.
 
 ## Où on en est (26 novembre 2026)
 
@@ -14,8 +23,10 @@ drafter de l'équipe Opinel, accélère encore la génération.
 
 - Un **chat interactif** en français sur le GPU du Mac, avec un historique,
   une réflexion masquée et une réponse affichée au fil de l'eau.
-- **Environ 77 tokens/s** en décodage sur un MacBook Air M5, et 60 sur un
-  Mac mini M4, pour environ 9 Go de mémoire au plus fort.
+- **Environ 77 tokens/s** en décodage sur un MacBook Air M5 à froid, et 60
+  sur un Mac mini M4, pour environ 9 Go de mémoire au plus fort. Le MacBook
+  Air n'a pas de ventilateur : sous charge prolongée, il descend à 55-65
+  tokens/s (voir les [benchmarks](benchmarks/summary.md)).
 - **Le décodage spéculatif** (`--speculatif`) accélère d'environ 10 % un chat
   réel, et jusqu'à 25 % les réponses courtes. Il s'adapte tout seul à la puce.
 - **Une fidélité vérifiée.** Les poids N°8 sont transcrits sans perte, et les
@@ -89,7 +100,7 @@ Options utiles :
 
 | Option | Effet |
 |---|---|
-| `--speculatif` | décodage spéculatif Télégraphe, plus rapide, mêmes réponses en loi |
+| `--speculatif` | décodage spéculatif Télégraphe, plus rapide, mêmes réponses qu'en mode normal |
 | `--reasoning-effort low\|medium\|high` | durée de la réflexion masquée (`low` par défaut) |
 | `--temperature 0` | réponses déterministes (par défaut 0,8, top-p 0,9, top-k 40, comme la fiche du modèle) |
 | `--context-length N` | taille de la fenêtre de contexte, jusqu'à 32 768 tokens |
