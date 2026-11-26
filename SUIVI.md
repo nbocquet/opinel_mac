@@ -673,6 +673,42 @@ drafter un peu plus d'un tiers de pas. Les réponses greedy divergent du décoda
 normal au bout d'environ un tiers des tokens (médiane), l'effet attendu d'autres
 noyaux sur un choix greedy.
 
+**Décomposition d'une passe** (issue #4, 6 prompts × 80 passes, M5, médianes).
+L'équipe Opinel attribuait l'écart entre nos ×1,2 et un plafond d'environ ×1,4
+au CPU (construction du graphe, boucle d'acceptation). La mesure ne le confirme
+pas :
+
+| Phase | Greedy K = 3 | Échantillonné K = 2 |
+|---|---|---|
+| drafter : graphe (CPU) | 0,5 ms | 0,5 ms |
+| drafter : GPU | 5,1 ms | 4,8 ms |
+| drafter : tirage (CPU) | 0,1 ms | 0,2 ms |
+| vérification : graphe, GPU déjà lancé | 9,0 ms | 7,9 ms |
+| vérification : fin du GPU, loi | 11,5 ms | 10,9 ms |
+| acceptation (CPU) | 0,0 ms | 0,1 ms |
+| retour arrière et contexte du drafter : graphe (CPU) | 0,5 ms | 0,1 ms |
+| retour arrière et contexte du drafter : GPU | 3,1 ms (moyenne 2,3) | 0,8 ms (moyenne 1,9) |
+| passe totale | 29,6 ms, 2,77 tokens | 25,7 ms, 2,34 tokens |
+
+Le CPU seul pèse 1 à 1,3 ms par passe : la construction du graphe de
+vérification se recouvre déjà avec le GPU (envoi toutes les 3 couches). Le
+poste absent de la formule de l'équipe est le retour arrière (rejeu de
+Mamba-3 sur les 29 couches quand le bloc est en partie refusé) avec la
+projection du contexte du drafter : 2 à 3 ms par passe. Plafond recalculé :
+2,77 / (1,4 + 0,4 + 0,2) ≈ ×1,35.
+
+Le retour arrière est désormais évalué sans attente (`ASYNC_TAIL`,
+`mx.async_eval`) : le GPU le traite pendant que le CPU construit le graphe du
+drafter suivant. Mesures alternées sur 16 prompts : +2,0 % en greedy et
++1,9 % en échantillonné sur un premier run, +0,5 % et −0,2 % sur un second
+(Mac plus chaud, débits plus bas), soit environ +1 %, à la limite du bruit.
+L'acceptation est inchangée (2,716 contre 2,722 tokens par passe en greedy,
+2,273 contre 2,280 en échantillonné), signe qu'aucune course n'abîme le
+cache. La boucle n'est pas déterministe d'un passage à l'autre, même en
+synchrone et avec `OLALA_DETERMINISTIC=1` (4 sorties greedy identiques sur
+8). Le vrai levier est de supprimer le rejeu : le noyau de vérification
+écrirait au passage l'état de chaque position (issue #7).
+
 ## Benchmarks multi-machines
 
 `benchmarks/` rassemble des mesures comparables d'une machine à l'autre :
