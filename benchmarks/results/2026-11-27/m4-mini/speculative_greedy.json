@@ -1,0 +1,59 @@
+{
+  "plain_tokens_per_second": 61.016647725314236,
+  "interleaved": true,
+  "sampling": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "top_k": 0
+  },
+  "head_vocab": 65536,
+  "speculative": {
+    "2": {
+      "verify_path": "prefill",
+      "verify_calibration_ms": {
+        "noyaux de décodage": 31.378396088257432,
+        "chemin de préremplissage": 27.47979201376438
+      },
+      "tokens_per_second": 74.56427553903855,
+      "speedup": 1.2220316637963011,
+      "tokens_per_step": 2.3266129032258065,
+      "draft_ms": 5.379500214926778,
+      "verify_ms": 25.75239688099023,
+      "identical_prefix_median": 0.20703125
+    },
+    "3": {
+      "verify_path": "prefill",
+      "verify_calibration_ms": {
+        "noyaux de décodage": 40.800187387503684,
+        "chemin de préremplissage": 28.940103948116302
+      },
+      "tokens_per_second": 80.27765260725064,
+      "speedup": 1.3156680283165656,
+      "tokens_per_step": 2.6754791804362195,
+      "draft_ms": 5.892191672240927,
+      "verify_ms": 27.294313079743386,
+      "identical_prefix_median": 0.20703125
+    },
+    "4": {
+      "verify_path": "prefill",
+      "verify_calibration_ms": {
+        "noyaux de décodage": 53.238000022247434,
+        "chemin de préremplissage": 31.82064602151513
+      },
+      "tokens_per_second": 78.94847376876817,
+      "speedup": 1.2938841564056374,
+      "tokens_per_step": 2.9228550829127613,
+      "draft_ms": 6.3162665000345175,
+      "verify_ms": 30.49461177913519,
+      "identical_prefix_median": 0.212890625
+    }
+  },
+  "meta": {
+    "machine": "m4-mini",
+    "date": "2026-11-27",
+    "commit": "2dbaf50",
+    "quick": false,
+    "power": "secteur",
+    "olala": {}
+  }
+}
