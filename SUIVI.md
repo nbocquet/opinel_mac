@@ -766,6 +766,22 @@ calibrage :
 
 Avec le calibrage, le M4 passe de ×0,95 à ×1,07 dans le chat.
 
+Seconde série du M5 (27 novembre, commit `98dd547` : retour arrière sans
+attente et tête de 64k tokens) : greedy K = 3 ×1,32, échantillonné K = 2
+×1,24, chat varié ×1,13, contre ×1,22, ×1,18 et ×1,09 la veille. Le Mac était
+nettement plus frais (décodage normal 77,7 tokens/s contre 65,3) : la
+vérification de 4 tokens dans la boucle tombe de 27,5 à 21,3 ms et le drafter
+de 5,8 à 4,5 ms. Les tokens gardés par passe ne bougent pas (2,66 contre
+2,67). L'écart avec la veille mêle donc les deux changements et la chauffe ; seuls
+les gains alternés de l'issue #5 (+5 % greedy, +3 % échantillonné) isolent la
+tête.
+
+Le M4 (ventilé) fait une comparaison plus propre : décodage normal stable
+(61,0 contre 61,6 tokens/s). Greedy K = 3 ×1,32 contre ×1,27 (+4 %),
+échantillonné K = 2 ×1,16 contre ×1,13 (+3 %), chat varié ×1,08 contre ×1,07.
+Le drafter n'y raccourcit pas (5,9 contre 5,7 ms à K = 3 greedy) ; la passe de
+vérification gagne 1,4 ms (28,7 → 27,3).
+
 ## Pistes de l'issue #1 non traitées
 
 Les conseils suivants de l'[issue #1](../../issues/1) restent à faire ou à
