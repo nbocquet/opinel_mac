@@ -45,6 +45,12 @@ def main():
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
+    ranked = json.loads(args.vocab_file.read_text())["ranked"] if any(args.head_vocab) else []
+    for n in args.head_vocab:
+        if n < 0 or n > len(ranked):
+            parser.error(f"--head-vocab : {n} hors limites ; {args.vocab_file} ne classe que "
+                         f"{len(ranked)} tokens (0 : tête complète).")
+
     from opinel_mac import configure_environment
     configure_environment()
     os.environ.setdefault("OLALA_DETERMINISTIC", "1")
@@ -63,7 +69,6 @@ def main():
                          target_head=model.lm_head if args.shared_head else None, quantize_bits=args.quantize_bits)
     records = capture_aux(model)
     prompts = json.loads(args.prompts.read_text())["prompts"][:args.limit]
-    ranked = json.loads(args.vocab_file.read_text())["ranked"] if any(args.head_vocab) else []
     heads = {n: (set(ranked[:n]) if n else None) for n in args.head_vocab}
 
     totals = {n: {k: [] for k in CARD} for n in heads}
