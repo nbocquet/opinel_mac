@@ -1,0 +1,22 @@
+{
+  "mode": "table",
+  "repeats": 20,
+  "milliseconds": {
+    "1 (décodage fusionné)": 18.608938087709248,
+    "1 (chemin générique, OLALA_FUSED=0)": 27.40629157051444,
+    "2": 24.743479094468057,
+    "4": 28.471042052842677,
+    "6": 34.59312510676682,
+    "2 (noyaux de décodage, opinel_verify)": 24.515104480087757,
+    "4 (noyaux de décodage, opinel_verify)": 40.73927109129727,
+    "6 (noyaux de décodage, opinel_verify)": 55.82568782847375
+  },
+  "meta": {
+    "machine": "m4-mini",
+    "date": "2026-11-27",
+    "commit": "2dbaf50",
+    "quick": false,
+    "power": "secteur",
+    "olala": {}
+  }
+}
