@@ -27,7 +27,7 @@ def tiny_drafter(seed=0, layers=2, hidden=32, heads=4, kv_heads=2, head_dim=8, v
     d.block_size, d.mask_token_id, d.transfer_dim, d.top_k = 8, vocab - 1, transfer, top_k
     d.transfer_eps, d.eps, d.layers, d.heads, d.kv_heads, d.head_dim = 1e-6, 1e-6, layers, heads, kv_heads, head_dim
     d.rope_theta, d.window = 1e6, window
-    d.quantized, d.target_head = {}, None
+    d.quantized, d.target_head, d.head_ids = {}, None, None
     weights = {"fc.weight": w(hidden, 5 * hidden), "hidden_norm.weight": w(hidden) + 1, "norm.weight": w(hidden) + 1,
                "lm_head.weight": w(vocab, hidden), "transfer_codebook": w(vocab, transfer),
                "injection.message.weight": w(message, transfer), "injection.receiver_gate.weight": w(message, transfer),
@@ -105,6 +105,39 @@ class TelegrapheTests(unittest.TestCase):
         long, _ = d.draft([5, 8], [9, 6], context, steps=7)
         short, _ = d.draft([5, 8], [9, 6], context, steps=3)
         np.testing.assert_array_equal(long[:, :3], short)
+
+    def test_restricted_head_drafts_among_its_ids_only(self):
+        d = tiny_drafter()
+        aux = mx.random.normal((9, 5 * 32), key=mx.random.key(4))
+        context = d.context_kv(aux)
+        hidden, _ = d.forward([5], [9], context, 3)
+        logits = np.array(d.head_logits(hidden[:, 1:]).astype(mx.float32))
+        full = d.draft([5], [9], context, 3, with_candidates=True)
+        allowed = list(range(0, 50, 2))
+        d.restrict_head(allowed)
+        candidates = np.array(d.candidates(hidden))
+        for row, ids in zip(logits[0], candidates[0]):  # the top 4 of the allowed ids, by the full head's logits
+            expected = sorted(allowed, key=lambda i: -row[i])[:4]
+            self.assertEqual(sorted(ids.tolist()), sorted(expected))
+        tokens, _, _ = d.draft([5], [9], context, 3, with_candidates=True)
+        self.assertTrue(set(np.array(tokens).ravel().tolist()) <= set(allowed))
+        d.restrict_head(range(50))  # every id: the full head's drafts
+        np.testing.assert_array_equal(d.draft([5], [9], context, 3, with_candidates=True)[0], full[0])
+        d.restrict_head(None)
+        np.testing.assert_array_equal(d.draft([5], [9], context, 3, with_candidates=True)[0], full[0])
+
+    def test_frequent_ids_reads_the_ranking_and_zero_means_the_full_head(self):
+        import json
+        import tempfile
+        from opinel_telegraphe import VOCAB_FILE, frequent_ids
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "vocab.json"
+            path.write_text(json.dumps({"ranked": [7, 3, 9, 1]}))
+            self.assertEqual(frequent_ids(2, path), [7, 3])
+            self.assertIsNone(frequent_ids(0, path))
+            with self.assertRaises(ValueError):
+                frequent_ids(5, path)
+        self.assertEqual(len(frequent_ids(65536, VOCAB_FILE)), 65536)  # the committed ranking
 
     def test_a_block_ignores_context_rows_past_its_anchor(self):
         d = tiny_drafter()

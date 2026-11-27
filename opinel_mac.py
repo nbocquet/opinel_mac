@@ -216,7 +216,7 @@ def generate_turn(model, tokenizer, messages, args, stream=False, trim_history=F
 def load_speculator(model, steps, offline=False):
     """Télégraphe drafter (weights in models/telegraphe, downloaded at the pinned revision if missing)."""
     from opinel_speculative import Speculator
-    from opinel_telegraphe import DEFAULT_FOLDER, Telegraphe, prepare
+    from opinel_telegraphe import DEFAULT_FOLDER, Telegraphe, frequent_ids, prepare
 
     if not (DEFAULT_FOLDER / "mask_embedding.npy").exists():
         if offline:
@@ -225,6 +225,7 @@ def load_speculator(model, steps, offline=False):
         prepare(DEFAULT_FOLDER)
     drafter = Telegraphe(DEFAULT_FOLDER, embedding=model.model.embedding.weight, target_head=model.lm_head,
                          quantize_bits=8)
+    drafter.restrict_head(frequent_ids())  # 64k most frequent tokens: +4-5 % in the loop (issue #5)
     speculator = Speculator(model, drafter, steps=steps)
     path = "noyaux de décodage" if speculator.decode_kernels else "chemin de préremplissage"
     timings = ", ".join(f"{name} {value:.1f} ms" for name, value in (speculator.timings or {}).items())
